@@ -23,6 +23,7 @@ var (
 	shellCommentType = reflect.TypeOf(syntax.Comment{})
 )
 
+// equalShellAST ignores comments and source positions, which formatting may change.
 func equalShellAST(a, b reflect.Value) bool {
 	if !a.IsValid() || !b.IsValid() {
 		return a.IsValid() == b.IsValid()
