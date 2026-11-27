@@ -99,7 +99,7 @@ func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
 	writeTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
 	input := "## Second\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
-	want := "## `f`\n\n*First*\n\n## `f`\n\nSecond\n\n[Link](./target)\n\n- `@return 255` **Failure**\n"
+	want := "## `f`\n\n*First*\n\n## `f`\n\nSecond\n\n[Link](./target)\n\n### Return\n\n- `255`: **Failure**\n"
 	status, out, diagnostics := invoke(input, "generate", first, "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
@@ -333,5 +333,41 @@ func TestLanguageSpecificDeclarations(t *testing.T) {
 		if status != 2 || !strings.Contains(diagnostics, "immediately precede") {
 			t.Fatalf("documented %s declaration = %d, %q", test.language, status, diagnostics)
 		}
+	}
+}
+
+func TestGenerateTagSections(t *testing.T) {
+	const source = `## Summary
+##
+## @sideeffect Writes [logs](./logs)
+## @exit 10 Fatal
+## @return 255 Error
+## @param $1000000000000000000000000000000 Large
+## @stderr *Diagnostics*
+## @param $10 Tenth
+## @stdout **Output**
+## @param $2 Second
+## @stdin Input
+## @return 2 Difference
+## @exit 1 Missing
+## @sideeffect Updates cache
+## @return 0 OK
+check_file() { :; }
+`
+	const want = "## `check_file`\n\nSummary\n\n" +
+		"### Param\n\n- `$2`: Second\n- `$10`: Tenth\n- `$1000000000000000000000000000000`: Large\n\n" +
+		"### Stdin\n\nInput\n\n" +
+		"### Stdout\n\n**Output**\n\n" +
+		"### Stderr\n\n*Diagnostics*\n\n" +
+		"### Return\n\n- `0`: OK\n- `2`: Difference\n- `255`: Error\n\n" +
+		"### Exit\n\n- `1`: Missing\n- `10`: Fatal\n\n" +
+		"### Side Effect\n\n- Writes [logs](./logs)\n- Updates cache\n"
+	status, out, diagnostics := invoke(source, "generate", "-")
+	if status != 0 || out != want || diagnostics != "" {
+		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
+	}
+	status, out, diagnostics = invoke(source, "fmt", "-")
+	if status != 0 || out != source || diagnostics != "" {
+		t.Fatalf("fmt changed tag order: %d, %q, %q", status, out, diagnostics)
 	}
 }

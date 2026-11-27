@@ -1,8 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -18,10 +20,41 @@ func writeMarkdown(out io.Writer, doc document) {
 	for _, paragraph := range doc.details {
 		fmt.Fprintf(out, "\n%s\n", strings.Join(paragraph, "\n"))
 	}
-	if len(doc.tags) != 0 {
-		fmt.Fprintln(out)
-		for _, tag := range doc.tags {
-			fmt.Fprintf(out, "- `%s` %s\n", tag.label(), tag.description)
+	groups := make(map[string][]tag)
+	for _, item := range doc.tags {
+		groups[item.name] = append(groups[item.name], item)
+	}
+	sections := [...]struct{ name, heading string }{
+		{"@param", "Param"},
+		{"@stdin", "Stdin"},
+		{"@stdout", "Stdout"},
+		{"@stderr", "Stderr"},
+		{"@return", "Return"},
+		{"@exit", "Exit"},
+		{"@sideeffect", "Side Effect"},
+	}
+	for _, section := range sections {
+		items := groups[section.name]
+		if len(items) == 0 {
+			continue
+		}
+		if items[0].argument != "" {
+			// Arguments use canonical decimal digits and a common prefix within
+			// each section, so length followed by lexical order is numeric order.
+			slices.SortFunc(items, func(a, b tag) int {
+				return cmp.Or(cmp.Compare(len(a.argument), len(b.argument)), cmp.Compare(a.argument, b.argument))
+			})
+		}
+		fmt.Fprintf(out, "\n### %s\n\n", section.heading)
+		for _, item := range items {
+			switch {
+			case item.argument != "":
+				fmt.Fprintf(out, "- %s: %s\n", codeSpan(item.argument), item.description)
+			case item.name == "@sideeffect":
+				fmt.Fprintf(out, "- %s\n", item.description)
+			default:
+				fmt.Fprintln(out, item.description)
+			}
 		}
 	}
 }
