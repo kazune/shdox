@@ -234,6 +234,23 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 		report(start, "documentation block must immediately precede a function declaration")
 	}
 
+	isBlank := func(line int) bool {
+		return strings.Trim(a.lines[line-1].text[columns[line]+1:], horizontal) == ""
+	}
+	first := start
+	for start < end && isBlank(start) {
+		a.formatted[start-1].omitted = true
+		start++
+	}
+	if start == end {
+		report(first, "expected a summary")
+		return doc, issues
+	}
+	for start < end && isBlank(end-1) {
+		a.formatted[end-2].omitted = true
+		end--
+	}
+
 	seen := make(map[string]bool)
 	blank, inTags := false, false
 	for line := start; line < end; line++ {
@@ -245,10 +262,6 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 		case suffix == "":
 			a.formatted[line-1].text = prefix
 			switch {
-			case line == start:
-				report(line, "expected a summary")
-			case line == end-1:
-				report(line, "documentation block cannot end with a blank line")
 			case inTags:
 				report(line, "blank line between tags")
 			case blank:
@@ -259,7 +272,7 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 		case suffix == content:
 			report(line, "expected horizontal whitespace after ##")
 		case strings.HasPrefix(content, "@"):
-			if line == start {
+			if !inTags && len(doc.summary) == 0 {
 				report(line, "expected a summary")
 			} else if !inTags && !blank {
 				report(line, "expected a blank line before tags")

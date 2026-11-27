@@ -24,15 +24,17 @@ func TestDocumentGrammar(t *testing.T) {
 		{"summary", "## Summary", ""},
 		{"details", "## Summary\n##\n## One\n## Two\n##\n## Three", ""},
 		{"tags", "## Summary\n##\n## @return 0 OK\n## @param $10 Path\n## @exit 0 Done\n## @return 255 Fail\n## @param $1 Name\n## @stdout A\n## @sideeffect B\n## @sideeffect B", ""},
-		{"missing summary", "##\n## Details", "summary"},
+		{"leading blank", "##\n## Summary", ""},
+		{"blank-only block", "##\n## \t", "summary"},
+		{"tag before summary after blank", "##\n## @stdout A", "summary"},
 		{"tag as summary", "## @stdout A", "summary"},
 		{"prefix", "### Summary", "whitespace"},
 		{"multiline summary", "## Summary\n## Continuation", ""},
 		{"missing tag separator", "## Summary\n## @stdout A", "blank line"},
 		{"consecutive blanks", "## Summary\n##\n##\n## Details", ""},
 		{"consecutive blanks between tags", "## Summary\n##\n## @stdin A\n##\n##\n## @stderr B", "between tags"},
-		{"consecutive trailing blanks", "## Summary\n##\n##", "cannot end"},
-		{"trailing blank", "## Summary\n## \t", "cannot end"},
+		{"consecutive trailing blanks", "## Summary\n##\n##", ""},
+		{"trailing blank", "## Summary\n## \t", ""},
 		{"blank between tags", "## Summary\n##\n## @stdout A\n##\n## @stderr B", "between tags"},
 		{"text after tags", "## Summary\n##\n## @stdout A\n## Text", "after tags"},
 		{"zero argument", "## Summary\n##\n## @param $0 Zero", "invalid position"},
@@ -465,5 +467,34 @@ func TestDiffRepeatedBlankLineDeletions(t *testing.T) {
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || out != want || diagnostics != "" {
 		t.Fatalf("fmt -d = %d, %q, %q; want %q", status, out, diagnostics, want)
+	}
+}
+
+func TestFormatBlockEdgeBlankLines(t *testing.T) {
+	input := "\t## \t\r\n##\n## Summary\n##\n## @return 1 Different\n## @return 0 OK\n## \t\r\n  ##\nf() { :; }"
+	want := "## Summary\n##\n## @return 0 OK\n## @return 1 Different\nf() { :; }"
+	for _, source := range []string{input, want} {
+		status, out, diagnostics := invoke(source, "fmt", "-")
+		if status != 0 || out != want || diagnostics != "" {
+			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
+		}
+		status, out, diagnostics = invoke(source, "generate", "-")
+		const markdown = "## `f`\n\nSummary\n\n### Return\n\n- `0`: OK\n- `1`: Different\n"
+		if status != 0 || out != markdown || diagnostics != "" {
+			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
+		}
+	}
+	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
+	if status != 1 || diagnostics != "" || !strings.Contains(out, "@@ -1,9 +1,5 @@\n") ||
+		!strings.Contains(out, "-\t## \t\r\n") || !strings.Contains(out, "-  ##\n") {
+		t.Fatalf("fmt -d = %d, %q, %q", status, out, diagnostics)
+	}
+	for _, invalid := range []string{"##\n## \t\nf() { :; }\n", "##\n## @return 0 OK\n##\nf() { :; }\n"} {
+		for _, command := range []string{"fmt", "generate"} {
+			status, out, diagnostics := invoke(invalid, command, "-")
+			if status != 2 || out != "" || !strings.Contains(diagnostics, "expected a summary") {
+				t.Fatalf("%s = %d, %q, %q", command, status, out, diagnostics)
+			}
+		}
 	}
 }
