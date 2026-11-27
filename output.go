@@ -10,6 +10,9 @@ import (
 
 func writeSource(out io.StringWriter, lines []sourceLine) {
 	for _, line := range lines {
+		if line.omitted {
+			continue
+		}
 		out.WriteString(line.text)
 		out.WriteString(line.eol)
 	}
@@ -90,11 +93,16 @@ func codeSpan(text string) string {
 	return fence + text + fence
 }
 
-// Formatting preserves line count, so matching lines are at the same index.
+// Formatted lines stay aligned with the input, with deletions marked omitted.
 func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
 	const contextLines = 3
 	var changed []int
+	deletions := make([]int, len(before)+1)
 	for i := range before {
+		deletions[i+1] = deletions[i]
+		if after[i].omitted {
+			deletions[i+1]++
+		}
 		if before[i] != after[i] {
 			changed = append(changed, i)
 		}
@@ -112,11 +120,9 @@ func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
 		}
 		start := max(0, first-contextLines)
 		end := min(len(before), changed[count-1]+contextLines+1)
-		hunkRange := fmt.Sprintf("%d", start+1)
-		if end-start != 1 {
-			hunkRange += fmt.Sprintf(",%d", end-start)
-		}
-		fmt.Fprintf(out, "@@ -%s +%s @@\n", hunkRange, hunkRange)
+		oldRange := diffRange(start, end-start)
+		newRange := diffRange(start-deletions[start], end-start-(deletions[end]-deletions[start]))
+		fmt.Fprintf(out, "@@ -%s +%s @@\n", oldRange, newRange)
 		for i := start; i < end; {
 			if before[i] == after[i] {
 				writeDiffLine(out, ' ', before[i])
@@ -131,13 +137,26 @@ func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
 				writeDiffLine(out, '-', line)
 			}
 			for _, line := range after[i:j] {
-				writeDiffLine(out, '+', line)
+				if !line.omitted {
+					writeDiffLine(out, '+', line)
+				}
 			}
 			i = j
 		}
 		changed = changed[count:]
 	}
 	return true
+}
+
+func diffRange(start, count int) string {
+	switch count {
+	case 0:
+		return fmt.Sprintf("%d,0", start)
+	case 1:
+		return fmt.Sprintf("%d", start+1)
+	default:
+		return fmt.Sprintf("%d,%d", start+1, count)
+	}
 }
 
 func writeDiffLine(out io.Writer, prefix byte, line sourceLine) {

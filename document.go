@@ -16,8 +16,9 @@ import (
 const horizontal = " \t"
 
 type sourceLine struct {
-	text string
-	eol  string
+	text    string
+	eol     string
+	omitted bool
 }
 
 func splitSource(source string) []sourceLine {
@@ -248,10 +249,10 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 				report(line, "expected a summary")
 			case line == end-1:
 				report(line, "documentation block cannot end with a blank line")
-			case blank:
-				report(line, "consecutive blank documentation lines")
 			case inTags:
 				report(line, "blank line between tags")
+			case blank:
+				a.formatted[line-1].omitted = true
 			}
 			blank = true
 			continue

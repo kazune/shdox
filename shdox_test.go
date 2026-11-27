@@ -29,7 +29,9 @@ func TestDocumentGrammar(t *testing.T) {
 		{"prefix", "### Summary", "whitespace"},
 		{"missing detail separator", "## Summary\n## Details", "blank line"},
 		{"missing tag separator", "## Summary\n## @stdout A", "blank line"},
-		{"consecutive blanks", "## Summary\n##\n##\n## Details", "consecutive"},
+		{"consecutive blanks", "## Summary\n##\n##\n## Details", ""},
+		{"consecutive blanks between tags", "## Summary\n##\n## @stdin A\n##\n##\n## @stderr B", "between tags"},
+		{"consecutive trailing blanks", "## Summary\n##\n##", "cannot end"},
 		{"trailing blank", "## Summary\n## \t", "cannot end"},
 		{"blank between tags", "## Summary\n##\n## @stdout A\n##\n## @stderr B", "between tags"},
 		{"text after tags", "## Summary\n##\n## @stdout A\n## Text", "after tags"},
@@ -430,5 +432,38 @@ func TestCheckStatusPrecedence(t *testing.T) {
 				t.Fatalf("check %v = %d, %q, %q", files, status, out, diagnostics)
 			}
 		}
+	}
+}
+
+func TestFormatRepeatedBlankLines(t *testing.T) {
+	input := "## Summary\n\t## \t\r\n  ##\n## First\n##\n##\n## Second\n##\n##\n## @return 0 OK\nf() { :; }"
+	want := "## Summary\n\t##\r\n## First\n##\n## Second\n##\n## @return 0 OK\nf() { :; }"
+	for _, source := range []string{input, want} {
+		status, out, diagnostics := invoke(source, "check", "-")
+		if status != 0 || out != "" || diagnostics != "" {
+			t.Fatalf("check = %d, %q, %q", status, out, diagnostics)
+		}
+		status, out, diagnostics = invoke(source, "fmt", "-")
+		if status != 0 || out != want || diagnostics != "" {
+			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
+		}
+		status, out, diagnostics = invoke(source, "generate", "-")
+		const markdown = "## `f`\n\nSummary\n\nFirst\n\nSecond\n\n### Return\n\n- `0`: OK\n"
+		if status != 0 || out != markdown || diagnostics != "" {
+			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
+		}
+	}
+}
+
+func TestDiffRepeatedBlankLineDeletions(t *testing.T) {
+	first := "## Summary\n##\n##\n## Details\nf() { :; }\n"
+	second := "## Summary\n##\n##\n## @return 0 OK\ng() { :; }"
+	input := first + strings.Repeat(":\n", 8) + second
+	want := "--- -\n+++ -\n" +
+		"@@ -1,6 +1,5 @@\n ## Summary\n ##\n-##\n ## Details\n f() { :; }\n :\n" +
+		"@@ -13,6 +12,5 @@\n :\n ## Summary\n ##\n-##\n ## @return 0 OK\n g() { :; }\n\\ No newline at end of file\n"
+	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
+	if status != 1 || out != want || diagnostics != "" {
+		t.Fatalf("fmt -d = %d, %q, %q; want %q", status, out, diagnostics, want)
 	}
 }
