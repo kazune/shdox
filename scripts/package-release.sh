@@ -28,6 +28,6 @@ if [[ $actual_version != "shdox $version" ]]; then
 	exit 1
 fi
 
-cp LICENSE README.md "$package_dir/"
+cp CHANGELOG.md LICENSE README.md "$package_dir/"
 cp docs/shdox.md "$package_dir/docs/"
 tar -czf "$RELEASE_ASSET_DIR/$package_name.tar.gz" -C "$workdir" "$package_name"

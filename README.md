@@ -38,7 +38,7 @@ GitHub Actions は Linux と macOS の amd64・arm64 でテストし、Linux で
 
 `v` で始まる有効なセマンティックバージョンタグを push すると、CI 成功後に GitHub Release を作成または更新します。
 Release には Linux と macOS の amd64・arm64 向けアーカイブと `SHA256SUMS.txt` を添付します。
-各アーカイブには実行ファイル、README、ライセンス、仕様書を含めます。
+各アーカイブには実行ファイル、README、CHANGELOG、ライセンス、仕様書を含めます。
 
 ## コメントの書き方
 
