@@ -23,13 +23,14 @@ make build
 | --- | --- |
 | `make fmt` | Go ソースを `gofmt` で整形する。 |
 | `make fmt-check` | 整形が必要なファイルを表示し、失敗する。 |
-| `make lint` | `go vet ./...` を実行する。 |
+| `make lint` | `go vet ./...` と ShellCheck でシェルスクリプトを検査する。 |
 | `make test` | cgo を無効にしてテストを実行する。 |
 | `make check` | lint、整形チェック、テストをまとめて実行する。 |
 | `make build` | cgo を無効にしてビルドし、既定では `./shdox` に出力する。 |
 | `make clean` | ビルド成果物を削除する。 |
 | `make ci` | 整形チェック、lint、テスト、ビルド、ELF 検査、CLI の動作確認を実行する。 |
 
+`make lint`、`make check`、`make ci` には ShellCheck が必要です。
 `make ci` は Bash と `readelf` を備えた Linux amd64・arm64 環境で実行します。
 GitHub Actions では両アーキテクチャで同じターゲットを実行します。
 
