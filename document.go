@@ -66,7 +66,8 @@ type document struct {
 type analysis struct {
 	lines     []sourceLine
 	formatted []sourceLine
-	documents []document
+	fileDoc   *document
+	functions []document
 }
 
 func detectLanguage(name, source string) syntax.LangVariant {
@@ -136,28 +137,42 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 	result.formatted = slices.Clone(result.lines)
 	var diagnostics []diagnostic
 	comments := make(map[int]int)
+	commentLines := make(map[int]bool)
 	functions := make(map[int][]*syntax.Lit)
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		switch node := node.(type) {
 		case *syntax.Comment:
 			line, column := position(node.Pos())
 			text := result.lines[line-1].text
-			if strings.HasPrefix(text[column-1:], "##") && strings.Trim(text[:column-1], horizontal) == "" {
-				comments[line] = column
+			if strings.Trim(text[:column-1], horizontal) == "" {
+				commentLines[line] = true
+				if strings.HasPrefix(text[column-1:], "##") {
+					comments[line] = column
+				}
 			}
 		case *syntax.FuncDecl:
 			line, column := position(node.Pos())
 			if strings.Trim(result.lines[line-1].text[:column-1], horizontal) == "" {
 				if node.Name != nil {
 					functions[line] = []*syntax.Lit{node.Name}
-				} else if len(node.Names) != 0 {
+				} else {
 					functions[line] = node.Names
 				}
+			}
+		case *syntax.TestDecl:
+			line, column := position(node.Pos())
+			if strings.Trim(result.lines[line-1].text[:column-1], horizontal) == "" {
+				functions[line] = nil
 			}
 		}
 		return true
 	})
 
+	headerEnd := 1
+	for headerEnd <= len(result.lines) && (commentLines[headerEnd] ||
+		strings.Trim(result.lines[headerEnd-1].text, horizontal) == "") {
+		headerEnd++
+	}
 	for line := 1; line <= len(result.lines); {
 		if comments[line] == 0 {
 			line++
@@ -167,13 +182,36 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 		for comments[line] != 0 {
 			line++
 		}
-		names := functions[line]
-		doc, issues := result.parseBlock(start, line, len(names) != 0, comments)
-		for _, name := range names {
-			doc.name = name.Value
-			result.documents = append(result.documents, doc)
+		names, declaration := functions[line]
+		fileBlock := !declaration && start < headerEnd
+		switch {
+		case fileBlock && result.fileDoc != nil:
+			diagnostics = append(diagnostics, diagnostic{
+				line: start, column: comments[start], message: "file documentation must be a single contiguous block", violation: true,
+			})
+		case !fileBlock && len(names) == 0:
+			diagnostics = append(diagnostics, diagnostic{
+				line: start, column: comments[start], message: "documentation block must immediately precede a named function or be in the file header", violation: true,
+			})
 		}
+		doc, issues := result.parseBlock(start, line, comments)
 		diagnostics = append(diagnostics, issues...)
+		if fileBlock && result.fileDoc == nil {
+			result.fileDoc = &doc
+		}
+		for _, name := range names {
+			functionDoc := doc
+			functionDoc.name = name.Value
+			result.functions = append(result.functions, functionDoc)
+		}
+	}
+	if len(result.lines) != 0 && result.lines[len(result.lines)-1].eol == "" {
+		for i := len(result.formatted) - 1; i >= 0; i-- {
+			if !result.formatted[i].omitted {
+				result.formatted[i].eol = ""
+				break
+			}
+		}
 	}
 	return result, diagnostics
 }
@@ -224,16 +262,12 @@ func decimal(text string) bool {
 	return true
 }
 
-func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]int) (document, []diagnostic) {
+func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []diagnostic) {
 	var doc document
 	var issues []diagnostic
 	report := func(line int, message string) {
 		issues = append(issues, diagnostic{line: line, column: columns[line], message: message, violation: true})
 	}
-	if !hasFunction {
-		report(start, "documentation block must immediately precede a function declaration")
-	}
-
 	isBlank := func(line int) bool {
 		return strings.Trim(a.lines[line-1].text[columns[line]+1:], horizontal) == ""
 	}

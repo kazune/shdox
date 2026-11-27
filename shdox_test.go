@@ -84,13 +84,13 @@ func TestDetectionAndFormatting(t *testing.T) {
 	}
 	original, _ := analyze("-", before, syntax.LangAuto)
 	formatted, _ := analyze("-", want, syntax.LangAuto)
-	if len(original.documents) != 2 || !reflect.DeepEqual(original.documents, formatted.documents) {
-		t.Fatalf("parsed structure changed: %#v → %#v", original.documents, formatted.documents)
+	if len(original.functions) != 2 || !reflect.DeepEqual(original.functions, formatted.functions) {
+		t.Fatalf("parsed structure changed: %#v → %#v", original.functions, formatted.functions)
 	}
 	for _, source := range []string{
-		"## Orphan",
-		"## Summary\n\nf() { :; }\n",
-		"## Summary\n# ordinary\nf() { :; }\n",
+		":\n## Orphan",
+		":\n## Summary\n\nf() { :; }\n",
+		":\n## Summary\n# ordinary\nf() { :; }\n",
 		": # inline\n\n## Orphan",
 	} {
 		if status, _, diagnostics := invoke(source, "check", "-"); status != 1 || !strings.Contains(diagnostics, "immediately precede") {
@@ -103,7 +103,7 @@ func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
 	writeTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
 	input := "## Second\n## Continuation\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
-	want := "## `f`\n\n*First*\n\n## `f`\n\nSecond\nContinuation\n\n### Description\n\n[Link](./target)\n\n### Return\n\n- `255`: **Failure**\n"
+	want := "# " + codeSpan(first) + "\n\n## Functions\n\n### `f`\n\n*First*\n\n# `-`\n\n## Functions\n\n### `f`\n\nSecond\nContinuation\n\n#### Description\n\n[Link](./target)\n\n#### Return\n\n- `255`: **Failure**\n"
 	status, out, diagnostics := invoke(input, "generate", first, "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
@@ -320,7 +320,7 @@ func TestLanguageSelectionAcrossInputs(t *testing.T) {
 
 func TestLanguageSpecificDeclarations(t *testing.T) {
 	source := "## Shared\nfunction alpha beta { :; }\n"
-	want := "## `alpha`\n\nShared\n\n## `beta`\n\nShared\n"
+	want := "# `-`\n\n## Functions\n\n### `alpha`\n\nShared\n\n### `beta`\n\nShared\n"
 	status, out, diagnostics := invoke(source, "generate", "--lang=zsh", "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("Zsh multi-name generation = %d, %q, %q", status, out, diagnostics)
@@ -358,14 +358,14 @@ func TestGenerateTagSections(t *testing.T) {
 ## @return 0 OK
 check_file() { :; }
 `
-	const want = "## `check_file`\n\nSummary\n\n" +
-		"### Param\n\n- `$2`: Second\n- `$10`: Tenth\n- `$1000000000000000000000000000000`: Large\n\n" +
-		"### Stdin\n\nInput\n\n" +
-		"### Stdout\n\n**Output**\n\n" +
-		"### Stderr\n\n*Diagnostics*\n\n" +
-		"### Return\n\n- `0`: OK\n- `2`: Difference\n- `255`: Error\n\n" +
-		"### Exit\n\n- `1`: Missing\n- `10`: Fatal\n\n" +
-		"### Side Effect\n\n- Writes [logs](./logs)\n- Updates cache\n"
+	const want = "# `-`\n\n## Functions\n\n### `check_file`\n\nSummary\n\n" +
+		"#### Param\n\n- `$2`: Second\n- `$10`: Tenth\n- `$1000000000000000000000000000000`: Large\n\n" +
+		"#### Stdin\n\nInput\n\n" +
+		"#### Stdout\n\n**Output**\n\n" +
+		"#### Stderr\n\n*Diagnostics*\n\n" +
+		"#### Return\n\n- `0`: OK\n- `2`: Difference\n- `255`: Error\n\n" +
+		"#### Exit\n\n- `1`: Missing\n- `10`: Fatal\n\n" +
+		"#### Side Effect\n\n- Writes [logs](./logs)\n- Updates cache\n"
 	status, out, diagnostics := invoke(source, "generate", "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
@@ -416,7 +416,7 @@ func TestFormatTagSortPreservesLineLayout(t *testing.T) {
 }
 
 func TestCheckStatusPrecedence(t *testing.T) {
-	const violation = "## Orphan\n"
+	const violation = ":\n## Orphan\n"
 	for _, command := range []string{"fmt", "generate"} {
 		status, out, diagnostics := invoke(violation, command, "-")
 		if status != 2 || out != "" || !strings.Contains(diagnostics, "immediately precede") {
@@ -450,7 +450,7 @@ func TestFormatRepeatedBlankLines(t *testing.T) {
 			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
 		}
 		status, out, diagnostics = invoke(source, "generate", "-")
-		const markdown = "## `f`\n\nSummary\nContinuation\n\n### Description\n\nFirst\n\nSecond\n\n### Return\n\n- `0`: OK\n"
+		const markdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\nContinuation\n\n#### Description\n\nFirst\n\nSecond\n\n#### Return\n\n- `0`: OK\n"
 		if status != 0 || out != markdown || diagnostics != "" {
 			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
 		}
@@ -479,7 +479,7 @@ func TestFormatBlockEdgeBlankLines(t *testing.T) {
 			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
 		}
 		status, out, diagnostics = invoke(source, "generate", "-")
-		const markdown = "## `f`\n\nSummary\n\n### Return\n\n- `0`: OK\n- `1`: Different\n"
+		const markdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n\n#### Return\n\n- `0`: OK\n- `1`: Different\n"
 		if status != 0 || out != markdown || diagnostics != "" {
 			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
 		}
@@ -496,5 +496,56 @@ func TestFormatBlockEdgeBlankLines(t *testing.T) {
 				t.Fatalf("%s = %d, %q, %q", command, status, out, diagnostics)
 			}
 		}
+	}
+}
+
+func TestFileDocumentation(t *testing.T) {
+	const source = "#!/bin/sh\n\n# License\n## Script summary\n##\n## Script description\n##\n" +
+		"## @exit 1 Failure\n## @return 0 OK\n## @param $1 File\n\n" +
+		"## Validate\nf() { :; }\n\n## Main\n##\n## @exit 0 OK\nmain() { :; }\n"
+	const want = "# `-`\n\nScript summary\n\n## Description\n\nScript description\n\n" +
+		"## Param\n\n- `$1`: File\n\n## Return\n\n- `0`: OK\n\n## Exit\n\n- `1`: Failure\n\n" +
+		"## Functions\n\n### `f`\n\nValidate\n\n### `main`\n\nMain\n\n#### Exit\n\n- `0`: OK\n"
+	status, formatted, diagnostics := invoke(source, "fmt", "-")
+	if status != 0 || formatted == source || diagnostics != "" {
+		t.Fatalf("fmt = %d, %q, %q", status, formatted, diagnostics)
+	}
+	for _, input := range []string{source, formatted} {
+		status, out, diagnostics := invoke(input, "generate", "-")
+		if status != 0 || out != want || diagnostics != "" {
+			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
+		}
+	}
+}
+
+func TestFileDocumentationPlacement(t *testing.T) {
+	for _, separator := range []string{"\n", "# ordinary comment\n"} {
+		source := "## First\n" + separator + "## Second\n:\n"
+		status, out, diagnostics := invoke(source, "check", "-")
+		if status != 1 || out != "" || !strings.Contains(diagnostics, "-:3:1: file documentation must be a single contiguous block") {
+			t.Fatalf("split header with %q: %d, %q, %q", separator, status, out, diagnostics)
+		}
+	}
+	const fileOnly = "##\r\n## Script\r\n##"
+	status, out, diagnostics := invoke(fileOnly, "fmt", "-")
+	if status != 0 || out != "## Script" || diagnostics != "" {
+		t.Fatalf("fmt file only = %d, %q, %q", status, out, diagnostics)
+	}
+	status, out, diagnostics = invoke(fileOnly, "generate", "-")
+	if status != 0 || out != "# `-`\n\nScript\n" || diagnostics != "" {
+		t.Fatalf("generate file only = %d, %q, %q", status, out, diagnostics)
+	}
+}
+
+func TestGenerateSkipsUndocumentedInputs(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "undocumented.sh")
+	documented := filepath.Join(dir, "documented.sh")
+	writeTestFile(t, empty, ":\n")
+	writeTestFile(t, documented, "## File\n:\n")
+	status, out, diagnostics := invoke("## Function\nf() { :; }\n", "generate", empty, documented, "-", empty)
+	want := "# " + codeSpan(documented) + "\n\nFile\n\n# `-`\n\n## Functions\n\n### `f`\n\nFunction\n"
+	if status != 0 || out != want || diagnostics != "" {
+		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
 	}
 }

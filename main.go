@@ -137,13 +137,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		name := opts.files[i]
 		switch {
 		case opts.command == "generate":
-			for _, doc := range result.documents {
-				if wroteSection {
-					output.WriteByte('\n')
-				}
-				wroteSection = true
-				writeMarkdown(output, doc)
+			if result.fileDoc == nil && len(result.functions) == 0 {
+				continue
 			}
+			if wroteSection {
+				output.WriteByte('\n')
+			}
+			wroteSection = true
+			writeMarkdown(output, name, result.fileDoc, result.functions)
 		case opts.diff:
 			if writeDiff(output, name, result.lines, result.formatted) {
 				status = 1

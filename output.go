@@ -18,16 +18,30 @@ func writeSource(out io.StringWriter, lines []sourceLine) {
 	}
 }
 
-func writeMarkdown(out io.Writer, doc document) {
-	fmt.Fprintf(out, "## %s\n\n%s\n", codeSpan(doc.name), strings.Join(doc.summary, "\n"))
+func writeMarkdown(out io.Writer, name string, fileDoc *document, functions []document) {
+	fmt.Fprintf(out, "# %s\n", codeSpan(name))
+	if fileDoc != nil {
+		writeDocument(out, *fileDoc, "##")
+	}
+	if len(functions) != 0 {
+		fmt.Fprintln(out, "\n## Functions")
+		for _, doc := range functions {
+			fmt.Fprintf(out, "\n### %s\n", codeSpan(doc.name))
+			writeDocument(out, doc, "####")
+		}
+	}
+}
+
+func writeDocument(out io.Writer, doc document, heading string) {
+	fmt.Fprintf(out, "\n%s\n", strings.Join(doc.summary, "\n"))
 	if len(doc.description) != 0 {
-		fmt.Fprintln(out, "\n### Description")
+		fmt.Fprintf(out, "\n%s Description\n", heading)
 		for _, paragraph := range doc.description {
 			fmt.Fprintf(out, "\n%s\n", strings.Join(paragraph, "\n"))
 		}
 	}
 	for _, section := range orderedTagSections(doc.tags) {
-		fmt.Fprintf(out, "\n### %s\n\n", section.heading)
+		fmt.Fprintf(out, "\n%s %s\n\n", heading, section.heading)
 		for _, item := range section.items {
 			switch {
 			case item.argument != "":
