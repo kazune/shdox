@@ -96,7 +96,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	failed := false
+	status := 0
 	var results []analysis
 	for _, name := range opts.files {
 		var data []byte
@@ -107,7 +107,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if err != nil {
 			fmt.Fprintf(stderr, "%s: %v\n", name, ioError(err))
-			failed = true
+			status = 2
 			continue
 		}
 		result, issues := analyze(name, string(data), opts.language)
@@ -117,18 +117,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			} else {
 				fmt.Fprintln(stderr, issue.message)
 			}
+			if opts.command == "check" && issue.violation {
+				status = max(status, 1)
+			} else {
+				status = 2
+			}
 		}
-		failed = failed || len(issues) > 0
 		if opts.command != "check" {
 			results = append(results, result)
 		}
 	}
-	if failed {
-		return 2
+	if status != 0 {
+		return status
 	}
 
 	output := bufio.NewWriter(stdout)
-	status := 0
 	wroteSection := false
 	for i, result := range results {
 		name := opts.files[i]

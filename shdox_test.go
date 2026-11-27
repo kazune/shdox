@@ -51,7 +51,7 @@ func TestDocumentGrammar(t *testing.T) {
 				if status != 0 || out != "" || diagnostics != "" {
 					t.Fatalf("check = %d, %q, %q", status, out, diagnostics)
 				}
-			} else if status != 2 || out != "" || !strings.Contains(diagnostics, test.issue) {
+			} else if status != 1 || out != "" || !strings.Contains(diagnostics, test.issue) {
 				t.Fatalf("check = %d, %q, %q; expected %q", status, out, diagnostics, test.issue)
 			}
 		})
@@ -89,7 +89,7 @@ func TestDetectionAndFormatting(t *testing.T) {
 		"## Summary\n# ordinary\nf() { :; }\n",
 		": # inline\n\n## Orphan",
 	} {
-		if status, _, diagnostics := invoke(source, "check", "-"); status != 2 || !strings.Contains(diagnostics, "immediately precede") {
+		if status, _, diagnostics := invoke(source, "check", "-"); status != 1 || !strings.Contains(diagnostics, "immediately precede") {
 			t.Fatalf("check %q = %d, %q", source, status, diagnostics)
 		}
 	}
@@ -330,7 +330,7 @@ func TestLanguageSpecificDeclarations(t *testing.T) {
 			t.Fatalf("%s input = %d, %q", test.language, status, diagnostics)
 		}
 		status, _, diagnostics = invoke("## Misplaced\n"+test.declaration, "check", "--lang", test.language, "-")
-		if status != 2 || !strings.Contains(diagnostics, "immediately precede") {
+		if status != 1 || !strings.Contains(diagnostics, "immediately precede") {
 			t.Fatalf("documented %s declaration = %d, %q", test.language, status, diagnostics)
 		}
 	}
@@ -408,5 +408,27 @@ func TestFormatTagSortPreservesLineLayout(t *testing.T) {
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || !strings.Contains(out, "+\t## @param $1 File\r\n") || diagnostics != "" {
 		t.Fatalf("fmt -d for reorder only = %d, %q, %q", status, out, diagnostics)
+	}
+}
+
+func TestCheckStatusPrecedence(t *testing.T) {
+	const violation = "## Orphan\n"
+	for _, command := range []string{"fmt", "generate"} {
+		status, out, diagnostics := invoke(violation, command, "-")
+		if status != 2 || out != "" || !strings.Contains(diagnostics, "immediately precede") {
+			t.Fatalf("%s = %d, %q, %q", command, status, out, diagnostics)
+		}
+	}
+
+	file := filepath.Join(t.TempDir(), "invalid.sh")
+	for _, bad := range []string{"if\n", "# invalid UTF-8: \xff\n"} {
+		writeTestFile(t, file, bad)
+		for _, files := range [][]string{{"-", file}, {file, "-"}} {
+			status, out, diagnostics := invoke(violation, append([]string{"check"}, files...)...)
+			if status != 2 || out != "" || !strings.Contains(diagnostics, file+":") ||
+				!strings.Contains(diagnostics, "immediately precede") {
+				t.Fatalf("check %v = %d, %q, %q", files, status, out, diagnostics)
+			}
+		}
 	}
 }

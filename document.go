@@ -41,6 +41,7 @@ func splitSource(source string) []sourceLine {
 type diagnostic struct {
 	line, column int
 	message      string
+	violation    bool
 }
 
 type tag struct {
@@ -86,14 +87,14 @@ func detectLanguage(name, source string) syntax.LangVariant {
 func analyze(name, source string, language syntax.LangVariant) (analysis, []diagnostic) {
 	var result analysis
 	if strings.HasPrefix(source, "\uFEFF") {
-		return result, []diagnostic{{1, 1, "UTF-8 BOM is not allowed"}}
+		return result, []diagnostic{{line: 1, column: 1, message: "UTF-8 BOM is not allowed"}}
 	}
 	if !utf8.ValidString(source) {
 		line, column := 1, 1
 		for len(source) > 0 {
 			r, size := utf8.DecodeRuneInString(source)
 			if r == utf8.RuneError && size == 1 {
-				return result, []diagnostic{{line, column, "invalid UTF-8"}}
+				return result, []diagnostic{{line: line, column: column, message: "invalid UTF-8"}}
 			}
 			if r == '\n' {
 				line, column = line+1, 1
@@ -226,7 +227,7 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 	var doc document
 	var issues []diagnostic
 	report := func(line int, message string) {
-		issues = append(issues, diagnostic{line, columns[line], message})
+		issues = append(issues, diagnostic{line: line, column: columns[line], message: message, violation: true})
 	}
 	if !hasFunction {
 		report(start, "documentation block must immediately precede a function declaration")
