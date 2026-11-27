@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -153,7 +154,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if !slices.Equal(result.lines, result.formatted) {
 				var source strings.Builder
 				writeSource(&source, result.formatted)
-				if err := os.WriteFile(name, []byte(source.String()), 0o666); err != nil {
+				if err := replaceFile(name, source.String()); err != nil {
 					fmt.Fprintf(stderr, "%s: %v\n", name, ioError(err))
 					return 2
 				}
@@ -169,9 +170,57 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return status
 }
 
-func ioError(err error) error {
-	if pathErr, ok := err.(*os.PathError); ok {
-		return pathErr.Err
+func replaceFile(name, source string) (err error) {
+	target, err := filepath.EvalSymlinks(name)
+	if err != nil {
+		return err
 	}
-	return err
+	info, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("cannot replace a non-regular file")
+	}
+	// Replacing a directory entry checks directory permissions. Check write
+	// access to the existing file as well, without truncating it.
+	original, err := os.OpenFile(target, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	if err := original.Close(); err != nil {
+		return err
+	}
+
+	temp, err := os.CreateTemp(filepath.Dir(target), ".shdox-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			temp.Close()
+			os.Remove(temp.Name())
+		}
+	}()
+	if _, err := temp.WriteString(source); err != nil {
+		return err
+	}
+	if err := temp.Chmod(info.Mode().Perm()); err != nil {
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temp.Name(), target)
+}
+
+func ioError(err error) error {
+	switch err := err.(type) {
+	case *os.PathError:
+		return err.Err
+	case *os.LinkError:
+		return err.Err
+	default:
+		return err
+	}
 }
