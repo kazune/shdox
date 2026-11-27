@@ -6,7 +6,7 @@ export CGO_ENABLED := 0
 export GOAMD64 ?= v1
 export GOARM64 ?= v8.0
 
-.PHONY: fmt fmt-check lint test build ci
+.PHONY: fmt fmt-check lint test check build ci
 
 fmt:
 	gofmt -w .
@@ -24,8 +24,10 @@ lint:
 test:
 	go test ./...
 
+check: lint fmt-check test
+
 build:
 	go build -trimpath -o "$(BINARY)" .
 
-ci: fmt-check lint test
+ci: check
 	bash scripts/ci.sh

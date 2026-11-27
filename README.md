@@ -25,6 +25,7 @@ make build
 | `make fmt-check` | 整形が必要なファイルを表示し、失敗する。 |
 | `make lint` | `go vet ./...` を実行する。 |
 | `make test` | cgo を無効にしてテストを実行する。 |
+| `make check` | lint、整形チェック、テストをまとめて実行する。 |
 | `make build` | cgo を無効にしてビルドし、既定では `./shdox` に出力する。 |
 | `make ci` | 整形チェック、lint、テスト、ビルド、ELF 検査、CLI の動作確認を実行する。 |
 
