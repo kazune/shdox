@@ -21,7 +21,7 @@ const usage = `Usage:
   shdox generate [--lang LANG] [--] FILE...
 `
 
-const devVersion = "0.1.0-dev"
+const devVersion = "0.2.0-dev"
 
 // Go uses a bare timestamp after vX.0.0- without a base tag, and adds
 // a 0. identifier before the timestamp when a base tag exists.
