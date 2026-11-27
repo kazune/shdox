@@ -15,16 +15,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
-            elf-machine: Advanced Micro Devices X86-64
           - arch: arm64
             runner: ubuntu-24.04-arm
-            elf-machine: AArch64
     env:
-      CGO_ENABLED: '0'
-      GOOS: linux
       GOARCH: ${{ matrix.arch }}
-      GOAMD64: v1
-      GOARM64: v8.0
       GOTOOLCHAIN: local
 
     steps:
@@ -36,58 +30,5 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Run Go tests
-        run: go test ./...
-
-      - name: Build Linux binary
-        run: go build -trimpath -o "$RUNNER_TEMP/shdox" .
-
-      - name: Verify ELF architecture and static linking
-        shell: bash
-        env:
-          EXPECTED_MACHINE: ${{ matrix.elf-machine }}
-          LC_ALL: C
-        run: |
-          binary="$RUNNER_TEMP/shdox"
-          machine=$(readelf -hW "$binary" | awk -F ': *' '/Machine:/ {print $2}')
-          if [[ "$machine" != "$EXPECTED_MACHINE" ]]; then
-            printf 'Unexpected ELF machine: %s (expected %s)\n' "$machine" "$EXPECTED_MACHINE" >&2
-            exit 1
-          fi
-
-          segments=$(readelf -lW "$binary")
-          dynamic=$(readelf -dW "$binary")
-          if grep -Eq '^[[:space:]]*INTERP[[:space:]]' <<< "$segments" ||
-             grep -Fq '(NEEDED)' <<< "$dynamic"; then
-            printf 'Linux binary requires a dynamic loader or shared library\n' >&2
-            exit 1
-          fi
-
-      - name: Smoke-test the built binary
-        shell: bash
-        run: |
-          binary="$RUNNER_TEMP/shdox"
-          workdir=$(mktemp -d)
-          cd "$workdir" || exit 1
-
-          printf '##\tCheck the file.\ncheck_file() { :; }\n' > script.sh
-          "$binary" check script.sh
-          status=0
-          "$binary" fmt -d script.sh > format.diff || status=$?
-          test "$status" -eq 1
-          grep -Fxq '+## Check the file.' format.diff
-          "$binary" fmt -w script.sh
-          "$binary" fmt -d script.sh > format.diff
-          test ! -s format.diff
-
-          cat > expected.md <<'MARKDOWN'
-          # `script.sh`
-
-          ## Functions
-
-          ### `check_file`
-
-          Check the file.
-          MARKDOWN
-          "$binary" generate script.sh > actual.md
-          diff -u expected.md actual.md
+      - name: Test and verify the Linux binary
+        run: make ci

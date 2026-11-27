@@ -10,12 +10,26 @@ shdox は、シェルスクリプトと関数の `##` ドキュメントコメ�
 
 ## ビルド
 
-Go 1.26.0 以上が必要です。
+Go 1.26.0 以上と GNU Make が必要です。
 リポジトリのルートでビルドします。
 
 ```sh
-go build -o shdox .
+make build
 ```
+
+## 開発
+
+| コマンド | 動作 |
+| --- | --- |
+| `make fmt` | Go ソースを `gofmt` で整形する。 |
+| `make fmt-check` | 整形が必要なファイルを表示し、失敗する。 |
+| `make lint` | `go vet ./...` を実行する。 |
+| `make test` | cgo を無効にしてテストを実行する。 |
+| `make build` | cgo を無効にしてビルドし、既定では `./shdox` に出力する。 |
+| `make ci` | 整形チェック、lint、テスト、ビルド、ELF 検査、CLI の動作確認を実行する。 |
+
+`make ci` は Bash と `readelf` を備えた Linux amd64・arm64 環境で実行します。
+GitHub Actions では両アーキテクチャで同じターゲットを実行します。
 
 ## コメントの書き方
 
