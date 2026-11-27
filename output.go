@@ -19,9 +19,12 @@ func writeSource(out io.StringWriter, lines []sourceLine) {
 }
 
 func writeMarkdown(out io.Writer, doc document) {
-	fmt.Fprintf(out, "## %s\n\n%s\n", codeSpan(doc.name), doc.summary)
-	for _, paragraph := range doc.details {
-		fmt.Fprintf(out, "\n%s\n", strings.Join(paragraph, "\n"))
+	fmt.Fprintf(out, "## %s\n\n%s\n", codeSpan(doc.name), strings.Join(doc.summary, "\n"))
+	if len(doc.description) != 0 {
+		fmt.Fprintln(out, "\n### Description")
+		for _, paragraph := range doc.description {
+			fmt.Fprintf(out, "\n%s\n", strings.Join(paragraph, "\n"))
+		}
 	}
 	for _, section := range orderedTagSections(doc.tags) {
 		fmt.Fprintf(out, "\n### %s\n\n", section.heading)

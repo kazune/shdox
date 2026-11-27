@@ -27,7 +27,7 @@ func TestDocumentGrammar(t *testing.T) {
 		{"missing summary", "##\n## Details", "summary"},
 		{"tag as summary", "## @stdout A", "summary"},
 		{"prefix", "### Summary", "whitespace"},
-		{"missing detail separator", "## Summary\n## Details", "blank line"},
+		{"multiline summary", "## Summary\n## Continuation", ""},
 		{"missing tag separator", "## Summary\n## @stdout A", "blank line"},
 		{"consecutive blanks", "## Summary\n##\n##\n## Details", ""},
 		{"consecutive blanks between tags", "## Summary\n##\n## @stdin A\n##\n##\n## @stderr B", "between tags"},
@@ -100,8 +100,8 @@ func TestDetectionAndFormatting(t *testing.T) {
 func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
 	writeTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
-	input := "## Second\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
-	want := "## `f`\n\n*First*\n\n## `f`\n\nSecond\n\n[Link](./target)\n\n### Return\n\n- `255`: **Failure**\n"
+	input := "## Second\n## Continuation\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
+	want := "## `f`\n\n*First*\n\n## `f`\n\nSecond\nContinuation\n\n### Description\n\n[Link](./target)\n\n### Return\n\n- `255`: **Failure**\n"
 	status, out, diagnostics := invoke(input, "generate", first, "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
@@ -436,8 +436,8 @@ func TestCheckStatusPrecedence(t *testing.T) {
 }
 
 func TestFormatRepeatedBlankLines(t *testing.T) {
-	input := "## Summary\n\t## \t\r\n  ##\n## First\n##\n##\n## Second\n##\n##\n## @return 0 OK\nf() { :; }"
-	want := "## Summary\n\t##\r\n## First\n##\n## Second\n##\n## @return 0 OK\nf() { :; }"
+	input := "## Summary\n## Continuation\n\t## \t\r\n  ##\n## First\n##\n##\n## Second\n##\n##\n## @return 0 OK\nf() { :; }"
+	want := "## Summary\n## Continuation\n\t##\r\n## First\n##\n## Second\n##\n## @return 0 OK\nf() { :; }"
 	for _, source := range []string{input, want} {
 		status, out, diagnostics := invoke(source, "check", "-")
 		if status != 0 || out != "" || diagnostics != "" {
@@ -448,7 +448,7 @@ func TestFormatRepeatedBlankLines(t *testing.T) {
 			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
 		}
 		status, out, diagnostics = invoke(source, "generate", "-")
-		const markdown = "## `f`\n\nSummary\n\nFirst\n\nSecond\n\n### Return\n\n- `0`: OK\n"
+		const markdown = "## `f`\n\nSummary\nContinuation\n\n### Description\n\nFirst\n\nSecond\n\n### Return\n\n- `0`: OK\n"
 		if status != 0 || out != markdown || diagnostics != "" {
 			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
 		}

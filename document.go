@@ -57,10 +57,10 @@ func (t tag) label() string {
 }
 
 type document struct {
-	name    string
-	summary string
-	details [][]string
-	tags    []tag
+	name        string
+	summary     []string
+	description [][]string
+	tags        []tag
 }
 
 type analysis struct {
@@ -278,21 +278,16 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 		default:
 			a.formatted[line-1].text = prefix + " " + content
 			switch {
-			case line == start:
-				doc.summary = content
 			case inTags:
 				report(line, "text is not allowed after tags")
+			case !blank && len(doc.description) == 0:
+				doc.summary = append(doc.summary, content)
 			default:
-				if len(doc.details) == 0 {
-					if !blank {
-						report(line, "expected a blank line after the summary")
-					}
-					doc.details = append(doc.details, nil)
-				} else if blank {
-					doc.details = append(doc.details, nil)
+				if blank {
+					doc.description = append(doc.description, nil)
 				}
-				last := len(doc.details) - 1
-				doc.details[last] = append(doc.details[last], content)
+				last := len(doc.description) - 1
+				doc.description[last] = append(doc.description[last], content)
 			}
 		}
 		blank = false

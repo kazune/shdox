@@ -13,7 +13,8 @@ shdox は シェル関数のドキュメントコメントを検証・整形し�
 ドキュメントのない関数も許容します。
 ドキュメントを付けられるのは名前付きの関数宣言です。
 Zsh の匿名関数や Bats の `@test` にドキュメントを付けると配置エラーになります。
-概要は必須の1行で、詳細説明とタグはそれぞれ省略できます。
+最初のコメント空行までの本文が必須の概要で、1行以上記述します。
+詳細説明とタグはそれぞれ省略でき、詳細説明を書く場合は概要の後、タグの前に置きます。
 セクション間と詳細説明の段落間には、コメント空行を1行以上置きます。
 ブロックの先頭・末尾とタグ間にコメント空行は置けません。
 
@@ -54,9 +55,9 @@ validate_file() {
 この文法は行末の水平空白を除去した後の行に適用します。
 
 ```ebnf
-document    = summary, [ gap, details ], [ gap, tags ];
-summary     = text-line;
-details     = paragraph, { gap, paragraph };
+document    = summary, [ gap, description ], [ gap, tags ];
+summary     = paragraph;
+description = paragraph, { gap, paragraph };
 paragraph   = text-line, { text-line };
 tags        = tag-line, { tag-line };
 
@@ -65,11 +66,11 @@ blank       = "##", newline;
 text-line   = "##", separator, text, newline;
 tag-line    = "##", separator, tag, newline;
 
-tag         = "@param", separator, position, separator, description
-            | "@return", separator, status, separator, description
-            | "@exit", separator, status, separator, description
+tag         = "@param", separator, position, separator, tag-text
+            | "@return", separator, status, separator, tag-text
+            | "@exit", separator, status, separator, tag-text
             | ( "@stdin" | "@stdout" | "@stderr" | "@sideeffect" ),
-              separator, description;
+              separator, tag-text;
 
 position    = "$", nonzero, { digit };
 status      = "0" | nonzero, { digit };
@@ -78,7 +79,7 @@ hspace      = ? ASCII スペースまたは水平タブ ?;
 nonzero     = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 digit       = "0" | nonzero;
 text        = ? 水平空白と @ 以外の文字で始まる非空の行内文字列 ?;
-description = ? 水平空白以外の文字で始まる非空の行内文字列 ?;
+tag-text    = ? 水平空白以外の文字で始まる非空の行内文字列 ?;
 newline     = ? 行の終端 ?;
 ```
 
@@ -169,7 +170,8 @@ Zsh の構文解析は実験的です。
 ドキュメント付きの関数を入力の指定順に並べ、同じ入力内では宣言順に並べます。
 Zsh の複数名の関数宣言は、宣言内の名前の順に、各名前について同じドキュメントを出力します。
 各関数のセクションは、関数名をコード表記にしたレベル2見出しに続けて、概要、詳細、タグの順に出力します。
-詳細はコメントの段落構造を保持し、詳細のない関数では対応する出力を省略します。
+概要は関数見出しの直下に出力し、元の改行を保持します。
+詳細説明は `### Description` の下に段落構造を保持して出力し、詳細説明がない場合はこの見出しも省略します。
 タグは次の表の順序で、種別ごとにレベル3の見出しを付けて出力します。
 
 | タグ | 見出し | 項目の形式 |
@@ -195,6 +197,8 @@ Zsh の複数名の関数宣言は、宣言内の名前の順に、各名前に�
 ## `validate_file`
 
 ファイルを検証する。
+
+### Description
 
 ファイルの存在を確認する。
 存在しない場合はシェルを終了する。
@@ -247,7 +251,7 @@ Go と `mvdan.cc/sh/v3` のバージョンは実装開始時に `go.mod` で固�
 
 | 区分 | 確認する動作 |
 | --- | --- |
-| 正常系 | 概要のみ、概要と詳細、概要とタグ、全セクションを含む複数段落のブロックを受理する。 |
+| 正常系 | 1行および複数行の概要を受理し、概要のみ、概要と詳細、概要とタグ、全セクションを含む複数段落のブロックを検証する。 |
 | 境界値 | `$1` と `$10`、ステータス `0` と `255`、単一出現タグの0回と1回を受理する。 |
 | 不正入力 | `$0` と `$01`、ステータス `-1`・`00`・`256`、説明文の欠落、未知タグ、重複する引数・ステータス・単一出現タグを検出する。 |
 | 配置違反 | セクション区切りの欠落、タグ間・ブロック先頭・ブロック末尾のコメント空行、タグの後の本文、関数との間にある空行を検出する。 |
@@ -268,6 +272,7 @@ Go と `mvdan.cc/sh/v3` のバージョンは実装開始時に `go.mod` で固�
 | 差分 | 指定順、前後3行の文脈、ヘッダーの入力名、標準入力の `-` を確認する。 |
 | 上書き | 変更のあるファイルだけを指定順に上書きし、書き込みに失敗すると後続の書き込みを行わず、先に適用した変更が残る。 |
 | 生成 | 入力順・宣言順に1つの Markdown 文書を出力し、任意セクションの省略と説明文の Markdown 表記を確認する。
+| 生成 | 概要の行と詳細説明の段落を保持し、詳細説明がある場合だけ `### Description` を出力する。 |
 | 生成 | タグ見出しの固定順、項目の書式、位置引数と終了ステータスの数値順、副作用の記述順を確認する。 |
 | 生成 | 対象関数がない場合は空の出力と終了コード `0` を確認し、同名の宣言が複数ある場合は宣言ごとに見出しを確認する。 |
 | 生成 | LF 改行、関数セクション間の空行1行、空でない文書の末尾の LF 1文字を確認する。 |
