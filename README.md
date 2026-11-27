@@ -27,13 +27,16 @@ go build -o shdox .
 以下を `example.sh` として保存します。
 
 ```bash
-## ファイルが存在するか確認する。
+## Bash ファイルに整形差分があるか確認する。
 ##
-## @param $1 ファイルパス
-## @return 0 ファイルが存在する
-## @return 1 ファイルが存在しない
-file_exists() {
-    [[ -f "$1" ]]
+## @param $1 検査する Bash ファイルのパス
+## @return 0 整形差分なし
+## @return 1 整形差分あり
+## @return 2 shdox の処理エラー
+## @exit 1 指定したパスが通常ファイルではない
+shdox_fmt_check() {
+	[ -f "$1" ] || exit 1
+	shdox fmt -d "$1" >/dev/null
 }
 ```
 
