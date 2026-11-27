@@ -32,7 +32,13 @@ make build
 
 `make lint`、`make check`、`make ci` には ShellCheck が必要です。
 `make ci` は Bash と `readelf` を備えた Linux amd64・arm64 環境で実行します。
-GitHub Actions では両アーキテクチャで同じターゲットを実行します。
+GitHub Actions は Linux と macOS の amd64・arm64 でテストし、Linux では追加の ELF と CLI の確認も行います。
+
+## リリース
+
+`v` で始まる有効なセマンティックバージョンタグを push すると、CI 成功後に GitHub Release を作成または更新します。
+Release には Linux と macOS の amd64・arm64 向けアーカイブと `SHA256SUMS.txt` を添付します。
+各アーカイブには実行ファイル、README、ライセンス、仕様書を含めます。
 
 ## コメントの書き方
 

@@ -20,7 +20,7 @@ fmt-check:
 
 lint:
 	go vet ./...
-	shellcheck scripts/ci.sh
+	shellcheck scripts/ci.sh scripts/package-release.sh
 
 test:
 	go test ./...
