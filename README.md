@@ -67,6 +67,7 @@ shdox_fmt_check() {
 
 ```text
 Usage:
+  shdox --version
   shdox check [--lang LANG] [--] FILE...
   shdox fmt [--lang LANG] [-d | -w] [--] FILE...
   shdox generate [--lang LANG] [--] FILE...
@@ -74,13 +75,14 @@ Usage:
 
 | コマンド | 動作 |
 | --- | --- |
+| `./shdox --version` | バージョンを標準出力に表示する。 |
 | `./shdox check example.sh` | コメントの構文・配置・タグの値を検証する。 |
 | `./shdox fmt example.sh` | 整形済みの シェルスクリプトを標準出力に書く。 |
 | `./shdox fmt -d example.sh` | 整形前後の差分を標準出力に書く。 |
 | `./shdox fmt -w example.sh` | 変更がある場合はファイルを上書きする。 |
 | `./shdox generate example.sh` | ファイルと関数のドキュメントを1つの Markdown 文書として標準出力に書く。 |
 
-ファイルを1つ以上指定すると、指定順に処理されます。
+`check`、`fmt`、`generate` は、1つ以上のファイル引数を指定順に処理します。
 `--` 以降の引数はファイル名として扱います。
 引数 `-` を1回指定すると標準入力を使えます。
 `fmt -w` ではファイルを指定してください。

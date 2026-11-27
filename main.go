@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -13,10 +15,17 @@ import (
 )
 
 const usage = `Usage:
+  shdox --version
   shdox check [--lang LANG] [--] FILE...
   shdox fmt [--lang LANG] [-d | -w] [--] FILE...
   shdox generate [--lang LANG] [--] FILE...
 `
+
+const devVersion = "0.1.0-dev"
+
+// Go uses a bare timestamp after vX.0.0- without a base tag, and adds
+// a 0. identifier before the timestamp when a base tag exists.
+var pseudoVersion = regexp.MustCompile(`^v[0-9]+\.(0\.0-|[0-9]+\.[0-9]+-([^+]+\.)?0\.)[0-9]{14}-[0-9a-zA-Z]+$`)
 
 type options struct {
 	command  string
@@ -29,11 +38,16 @@ type options struct {
 func parseArgs(args []string) (options, error) {
 	var opts options
 	if len(args) == 0 {
-		return opts, fmt.Errorf("expected check, fmt, or generate")
+		return opts, fmt.Errorf("expected --version, check, fmt, or generate")
 	}
 	opts.command = args[0]
 	opts.language = syntax.LangAuto
 	switch opts.command {
+	case "--version":
+		if len(args) != 1 {
+			return opts, fmt.Errorf("--version does not take arguments")
+		}
+		return opts, nil
 	case "check", "fmt", "generate":
 	default:
 		return opts, fmt.Errorf("unknown command %q", opts.command)
@@ -101,6 +115,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "shdox: %v\n\n%s", err, usage)
 		return 2
+	}
+	if opts.command == "--version" {
+		info, _ := debug.ReadBuildInfo()
+		if _, err := fmt.Fprintf(stdout, "shdox %s\n", buildVersion(info)); err != nil {
+			fmt.Fprintf(stderr, "shdox: writing standard output: %v\n", ioError(err))
+			return 2
+		}
+		return 0
 	}
 
 	status := 0
@@ -174,6 +196,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return status
+}
+
+func buildVersion(info *debug.BuildInfo) string {
+	if info == nil {
+		return devVersion
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.modified" && setting.Value == "true" {
+			return devVersion
+		}
+	}
+	version, metadata, _ := strings.Cut(info.Main.Version, "+")
+	if metadata == "dirty" || strings.HasSuffix(metadata, ".dirty") || pseudoVersion.MatchString(version) {
+		return devVersion
+	}
+	if version, ok := strings.CutPrefix(version, "v"); ok && version != "" {
+		return version
+	}
+	return devVersion
 }
 
 func replaceFile(name, source string) (err error) {

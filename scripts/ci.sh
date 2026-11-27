@@ -26,6 +26,14 @@ if grep -Eq '^[[:space:]]*INTERP[[:space:]]' <<< "$segments" ||
 fi
 
 cd "$workdir" || exit 1
+version=$("$binary" --version)
+if [[ ${GITHUB_REF_TYPE:-} == tag && ${GITHUB_REF_NAME:-} =~ ^v[0-9]+\.[0-9]+\.[0-9]+($|-) ]]; then
+	if [[ "$version" != "shdox ${GITHUB_REF_NAME#v}" ]]; then
+		printf 'Unexpected version: %s\n' "$version" >&2
+		exit 1
+	fi
+fi
+
 run_success() {
 	local command=$1 output=$2
 	if ! "$binary" "$command" script.sh > "$output" 2> diagnostics || [[ -s diagnostics ]]; then

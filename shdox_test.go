@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -229,12 +230,57 @@ func TestDiffQuotesInputNames(t *testing.T) {
 	}
 }
 
+func TestVersion(t *testing.T) {
+	const source = ":\n"
+	stdin := strings.NewReader(source)
+	var stdout, stderr strings.Builder
+	status := run([]string{"--version"}, stdin, &stdout, &stderr)
+	info, _ := debug.ReadBuildInfo()
+	if want := "shdox " + buildVersion(info) + "\n"; status != 0 || stdout.String() != want || stderr.Len() != 0 || stdin.Len() != len(source) {
+		t.Fatalf("--version = %d, %q, %q with %d unread bytes; want %q and unread input",
+			status, stdout.String(), stderr.String(), stdin.Len(), want)
+	}
+	if status := run([]string{"--version"}, stdin, failingWriter{}, &stderr); status != 2 ||
+		!strings.Contains(stderr.String(), "writing standard output: write failed") || stdin.Len() != len(source) {
+		t.Errorf("--version with failing output = %d, %q with %d unread bytes", status, stderr.String(), stdin.Len())
+	}
+}
+
+func TestBuildVersion(t *testing.T) {
+	if got := buildVersion(nil); got != devVersion {
+		t.Errorf("no build info gives %q; want %q", got, devVersion)
+	}
+	for _, test := range []struct {
+		version, want string
+		settings      []debug.BuildSetting
+	}{
+		{version: "v1.2.3", want: "1.2.3"},
+		{version: "v1.2.3-rc.1", want: "1.2.3-rc.1"},
+		{version: "v2.0.0+incompatible", want: "2.0.0"},
+		{version: "", want: devVersion},
+		{version: "(devel)", want: devVersion},
+		{version: "v0.0.0-20261127000000-0123456789ab", want: devVersion},
+		{version: "v1.2.4-0.20261127000000-0123456789ab", want: devVersion},
+		{version: "v1.2.3-rc.1.0.20261127000000-0123456789ab", want: devVersion},
+		{version: "v1.2.3+dirty", want: devVersion},
+		{version: "v2.0.0+incompatible.dirty", want: devVersion},
+		{version: "v1.2.3", settings: []debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}, want: devVersion},
+	} {
+		info := &debug.BuildInfo{Main: debug.Module{Version: test.version}, Settings: test.settings}
+		if got := buildVersion(info); got != test.want {
+			t.Errorf("version %q with settings %v = %q; want %q", test.version, test.settings, got, test.want)
+		}
+	}
+}
+
 func TestUsageOnArgumentErrors(t *testing.T) {
 	for _, test := range []struct {
 		args    []string
 		message string
 	}{
-		{nil, "expected check, fmt, or generate"},
+		{nil, "expected --version, check, fmt, or generate"},
+		{[]string{"--version", "-"}, "--version does not take arguments"},
+		{[]string{"check", "--version", "-"}, `unknown option "--version" for check`},
 		{[]string{"unknown", "-"}, `unknown command "unknown"`},
 		{[]string{"check", "-d", "-"}, `unknown option "-d" for check`},
 		{[]string{"check"}, "expected at least one input file"},
