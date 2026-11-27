@@ -12,6 +12,12 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+const usage = `Usage:
+  shdox check [--lang LANG] [--] FILE...
+  shdox fmt [--lang LANG] [-d | -w] [--] FILE...
+  shdox generate [--lang LANG] [--] FILE...
+`
+
 type options struct {
 	command  string
 	language syntax.LangVariant
@@ -93,7 +99,7 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	opts, err := parseArgs(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "shdox: %v\n", err)
+		fmt.Fprintf(stderr, "shdox: %v\n\n%s", err, usage)
 		return 2
 	}
 

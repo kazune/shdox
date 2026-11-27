@@ -229,6 +229,37 @@ func TestDiffQuotesInputNames(t *testing.T) {
 	}
 }
 
+func TestUsageOnArgumentErrors(t *testing.T) {
+	for _, test := range []struct {
+		args    []string
+		message string
+	}{
+		{nil, "expected check, fmt, or generate"},
+		{[]string{"unknown", "-"}, `unknown command "unknown"`},
+		{[]string{"check", "-d", "-"}, `unknown option "-d" for check`},
+		{[]string{"check"}, "expected at least one input file"},
+		{[]string{"check", "-", "-"}, "standard input can only be specified once"},
+		{[]string{"fmt", "-d", "-w", "script.sh"}, "-d and -w cannot be combined"},
+		{[]string{"fmt", "-w", "-"}, "-w cannot be used with standard input"},
+		{[]string{"generate", "--lang", "-"}, "--lang requires a value"},
+		{[]string{"generate", "--lang=fish", "-"}, `unknown language "fish"`},
+	} {
+		const source = ":\n"
+		stdin := strings.NewReader(source)
+		var stdout, stderr strings.Builder
+		status := run(test.args, stdin, &stdout, &stderr)
+		want := "shdox: " + test.message + "\n\n" + usage
+		if status != 2 || stdout.Len() != 0 || stderr.String() != want || stdin.Len() != len(source) {
+			t.Errorf("%v = %d, %q, %q, %d unread bytes; want diagnostic %q and unread input",
+				test.args, status, stdout.String(), stderr.String(), stdin.Len(), want)
+		}
+	}
+	status, out, diagnostics := invoke("if\n", "check", "-")
+	if status != 2 || out != "" || !strings.HasPrefix(diagnostics, "-:1:1: ") || strings.Contains(diagnostics, "Usage:") {
+		t.Errorf("shell syntax error = %d, %q, %q", status, out, diagnostics)
+	}
+}
+
 func TestErrorsAndPreflight(t *testing.T) {
 	dir := t.TempDir()
 	first, broken := filepath.Join(dir, "first.sh"), filepath.Join(dir, "broken.sh")

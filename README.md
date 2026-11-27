@@ -65,6 +65,13 @@ shdox_fmt_check() {
 
 ## 使い方
 
+```text
+Usage:
+  shdox check [--lang LANG] [--] FILE...
+  shdox fmt [--lang LANG] [-d | -w] [--] FILE...
+  shdox generate [--lang LANG] [--] FILE...
+```
+
 | コマンド | 動作 |
 | --- | --- |
 | `./shdox check example.sh` | コメントの構文・配置・タグの値を検証する。 |
@@ -73,9 +80,11 @@ shdox_fmt_check() {
 | `./shdox fmt -w example.sh` | 変更がある場合はファイルを上書きする。 |
 | `./shdox generate example.sh` | ファイルと関数のドキュメントを1つの Markdown 文書として標準出力に書く。 |
 
-ファイルは複数指定でき、指定順に処理されます。
+ファイルを1つ以上指定すると、指定順に処理されます。
+`--` 以降の引数はファイル名として扱います。
 引数 `-` を1回指定すると標準入力を使えます。
 `fmt -w` ではファイルを指定してください。
+`-d` と `-w` は併用できません。
 
 ```sh
 ./shdox check - < example.sh
@@ -86,6 +95,7 @@ shdox_fmt_check() {
 
 各入力の方言は、シバン、拡張子（`.bash`・`.mksh`・`.bats`・`.zsh`）、Bash の順で決まります。
 `--lang` に `bash`・`posix`・`mksh`・`bats`・`zsh` のいずれかを指定すると、標準入力を含むすべての入力にその方言が適用されます。
+方言は `--lang LANG` または `--lang=LANG` の形式で指定できます。
 Zsh の構文解析は実験的です。
 
 ```sh
