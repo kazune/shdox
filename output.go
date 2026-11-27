@@ -10,6 +10,10 @@ import (
 
 func writeSource(out io.StringWriter, lines []sourceLine) {
 	for _, line := range lines {
+		if inserted := line.insertBefore; inserted != nil {
+			out.WriteString(inserted.text)
+			out.WriteString(inserted.eol)
+		}
 		if line.omitted {
 			continue
 		}
@@ -110,57 +114,76 @@ func codeSpan(text string) string {
 	return fence + text + fence
 }
 
-// Formatted lines stay aligned with the input, with deletions marked omitted.
-func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
-	const contextLines = 3
-	var changed []int
-	deletions := make([]int, len(before)+1)
-	for i := range before {
-		deletions[i+1] = deletions[i]
-		if after[i].omitted {
-			deletions[i+1]++
+type diffLine struct {
+	prefix byte
+	line   sourceLine
+}
+
+// Formatted lines stay aligned with the input, with insertions attached to
+// the following input line and deletions marked omitted.
+func diffLines(before, after []sourceLine) []diffLine {
+	var lines, added []diffLine
+	for i, line := range after {
+		if line.insertBefore != nil {
+			added = append(added, diffLine{'+', *line.insertBefore})
+			line.insertBefore = nil
 		}
-		if before[i] != after[i] {
-			changed = append(changed, i)
+		if before[i] == line {
+			lines = append(lines, added...)
+			added = added[:0]
+			lines = append(lines, diffLine{' ', line})
+			continue
+		}
+		lines = append(lines, diffLine{'-', before[i]})
+		if !line.omitted {
+			added = append(added, diffLine{'+', line})
 		}
 	}
-	if len(changed) == 0 {
+	return append(lines, added...)
+}
+
+func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
+	if slices.Equal(before, after) {
 		return false
 	}
+	const contextLines = 3
+	lines := diffLines(before, after)
 	fmt.Fprintf(out, "--- %s\n+++ %s\n", name, name)
 
-	for len(changed) != 0 {
-		first := changed[0]
-		count := 1
-		for count < len(changed) && changed[count]-changed[count-1] <= 2*contextLines+1 {
-			count++
+	oldOffset, newOffset, processed := 0, 0, 0
+	for first := 0; first < len(lines); {
+		if lines[first].prefix == ' ' {
+			first++
+			continue
 		}
-		start := max(0, first-contextLines)
-		end := min(len(before), changed[count-1]+contextLines+1)
-		oldRange := diffRange(start, end-start)
-		newRange := diffRange(start-deletions[start], end-start-(deletions[end]-deletions[start]))
-		fmt.Fprintf(out, "@@ -%s +%s @@\n", oldRange, newRange)
-		for i := start; i < end; {
-			if before[i] == after[i] {
-				writeDiffLine(out, ' ', before[i])
-				i++
-				continue
+		start := max(processed, first-contextLines)
+		oldOffset += start - processed
+		newOffset += start - processed
+
+		last := first
+		for i := first + 1; i < len(lines) && i-last <= 2*contextLines+1; i++ {
+			if lines[i].prefix != ' ' {
+				last = i
 			}
-			j := i + 1
-			for j < end && before[j] != after[j] {
-				j++
-			}
-			for _, line := range before[i:j] {
-				writeDiffLine(out, '-', line)
-			}
-			for _, line := range after[i:j] {
-				if !line.omitted {
-					writeDiffLine(out, '+', line)
-				}
-			}
-			i = j
 		}
-		changed = changed[count:]
+		end := min(len(lines), last+contextLines+1)
+		oldCount, newCount := 0, 0
+		for _, edit := range lines[start:end] {
+			if edit.prefix != '+' {
+				oldCount++
+			}
+			if edit.prefix != '-' {
+				newCount++
+			}
+		}
+		fmt.Fprintf(out, "@@ -%s +%s @@\n", diffRange(oldOffset, oldCount), diffRange(newOffset, newCount))
+		for _, edit := range lines[start:end] {
+			writeDiffLine(out, edit.prefix, edit.line)
+		}
+		oldOffset += oldCount
+		newOffset += newCount
+		processed = end
+		first = end
 	}
 	return true
 }

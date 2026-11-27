@@ -16,9 +16,10 @@ import (
 const horizontal = " \t"
 
 type sourceLine struct {
-	text    string
-	eol     string
-	omitted bool
+	text         string
+	eol          string
+	omitted      bool
+	insertBefore *sourceLine
 }
 
 func splitSource(source string) []sourceLine {
@@ -286,6 +287,7 @@ func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []
 	}
 
 	seen := make(map[string]bool)
+	var tagLines []int
 	blank, inTags := false, false
 	for line := start; line < end; line++ {
 		original := a.lines[line-1].text
@@ -295,10 +297,7 @@ func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []
 		switch {
 		case suffix == "":
 			a.formatted[line-1].text = prefix
-			switch {
-			case inTags:
-				report(line, "blank line between tags")
-			case blank:
+			if inTags || blank {
 				a.formatted[line-1].omitted = true
 			}
 			blank = true
@@ -309,7 +308,7 @@ func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []
 			if !inTags && len(doc.summary) == 0 {
 				report(line, "expected a summary")
 			} else if !inTags && !blank {
-				report(line, "expected a blank line before tags")
+				a.formatted[line-1].insertBefore = &sourceLine{text: prefix, eol: a.lines[line-2].eol}
 			}
 			inTags = true
 			t, err := parseTag(content)
@@ -322,6 +321,7 @@ func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []
 			}
 			seen[t.label()] = true
 			doc.tags = append(doc.tags, t)
+			tagLines = append(tagLines, line)
 		default:
 			a.formatted[line-1].text = prefix + " " + content
 			switch {
@@ -340,13 +340,13 @@ func (a *analysis) parseBlock(start, end int, columns map[int]int) (document, []
 		blank = false
 	}
 	if len(issues) == 0 {
-		// A valid block ends with all of its tag lines, with no gaps.
-		line := end - len(doc.tags)
+		index := 0
 		for _, section := range orderedTagSections(doc.tags) {
 			for _, item := range section.items {
+				line := tagLines[index]
 				prefix := a.lines[line-1].text[:columns[line]+1]
 				a.formatted[line-1].text = prefix + " " + item.label() + " " + item.description
-				line++
+				index++
 			}
 		}
 	}

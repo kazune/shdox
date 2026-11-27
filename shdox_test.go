@@ -30,12 +30,12 @@ func TestDocumentGrammar(t *testing.T) {
 		{"tag as summary", "## @stdout A", "summary"},
 		{"prefix", "### Summary", "whitespace"},
 		{"multiline summary", "## Summary\n## Continuation", ""},
-		{"missing tag separator", "## Summary\n## @stdout A", "blank line"},
+		{"optional tag separator", "## Summary\n## @stdout A", ""},
 		{"consecutive blanks", "## Summary\n##\n##\n## Details", ""},
-		{"consecutive blanks between tags", "## Summary\n##\n## @stdin A\n##\n##\n## @stderr B", "between tags"},
+		{"consecutive blanks between tags", "## Summary\n##\n## @stdin A\n##\n##\n## @stderr B", ""},
 		{"consecutive trailing blanks", "## Summary\n##\n##", ""},
 		{"trailing blank", "## Summary\n## \t", ""},
-		{"blank between tags", "## Summary\n##\n## @stdout A\n##\n## @stderr B", "between tags"},
+		{"blank between tags", "## Summary\n##\n## @stdout A\n##\n## @stderr B", ""},
 		{"text after tags", "## Summary\n##\n## @stdout A\n## Text", "after tags"},
 		{"zero argument", "## Summary\n##\n## @param $0 Zero", "invalid position"},
 		{"leading zero argument", "## Summary\n##\n## @param $01 One", "invalid position"},
@@ -547,5 +547,60 @@ func TestGenerateSkipsUndocumentedInputs(t *testing.T) {
 	want := "# " + codeSpan(documented) + "\n\nFile\n\n# `-`\n\n## Functions\n\n### `f`\n\nFunction\n"
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
+	}
+}
+
+func TestFormatTagBlankLines(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+	}{
+		{
+			"summary before tags",
+			"## Summary\r\n\t## @return 2 Error\n##\r\n##\n ## @return 0 OK\r\nf() { :; }",
+			"## Summary\r\n\t##\r\n\t## @return 0 OK\n ## @return 2 Error\r\nf() { :; }",
+		},
+		{
+			"description before tags",
+			"## Summary\n##\n## Description\r\n  ## @stdin Input\n##\n## @stdout Output\nf() { :; }",
+			"## Summary\n##\n## Description\r\n  ##\r\n  ## @stdin Input\n## @stdout Output\nf() { :; }",
+		},
+		{
+			"multiple before tags",
+			"## Summary\n  ##\r\n##\n## @stdin Input\n##\n## @stdout Output\nf() { :; }",
+			"## Summary\n  ##\r\n## @stdin Input\n## @stdout Output\nf() { :; }",
+		},
+		{
+			"file documentation with no final newline",
+			"## Summary\n## @stdin Input",
+			"## Summary\n##\n## @stdin Input",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var markdown string
+			for _, input := range []string{test.input, test.want} {
+				status, out, diagnostics := invoke(input, "fmt", "-")
+				if status != 0 || out != test.want || diagnostics != "" {
+					t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, test.want)
+				}
+				status, out, diagnostics = invoke(input, "generate", "-")
+				if status != 0 || diagnostics != "" || out == "" {
+					t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
+				}
+				if markdown != "" && markdown != out {
+					t.Fatalf("generate changed from %q to %q", markdown, out)
+				}
+				markdown = out
+			}
+		})
+	}
+}
+
+func TestDiffTagBlankLineInsertion(t *testing.T) {
+	input := ":\n:\n:\n## Summary\n## @stdin Input\nf() { :; }\n:\n:\n"
+	want := "--- -\n+++ -\n@@ -2,6 +2,7 @@\n :\n :\n ## Summary\n+##\n ## @stdin Input\n f() { :; }\n :\n"
+	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
+	if status != 1 || out != want || diagnostics != "" {
+		t.Fatalf("fmt -d = %d, %q, %q; want %q", status, out, diagnostics, want)
 	}
 }
