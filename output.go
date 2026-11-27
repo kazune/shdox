@@ -20,11 +20,32 @@ func writeMarkdown(out io.Writer, doc document) {
 	for _, paragraph := range doc.details {
 		fmt.Fprintf(out, "\n%s\n", strings.Join(paragraph, "\n"))
 	}
+	for _, section := range orderedTagSections(doc.tags) {
+		fmt.Fprintf(out, "\n### %s\n\n", section.heading)
+		for _, item := range section.items {
+			switch {
+			case item.argument != "":
+				fmt.Fprintf(out, "- %s: %s\n", codeSpan(item.argument), item.description)
+			case item.name == "@sideeffect":
+				fmt.Fprintf(out, "- %s\n", item.description)
+			default:
+				fmt.Fprintln(out, item.description)
+			}
+		}
+	}
+}
+
+type tagSection struct {
+	heading string
+	items   []tag
+}
+
+func orderedTagSections(tags []tag) []tagSection {
 	groups := make(map[string][]tag)
-	for _, item := range doc.tags {
+	for _, item := range tags {
 		groups[item.name] = append(groups[item.name], item)
 	}
-	sections := [...]struct{ name, heading string }{
+	order := [...]struct{ name, heading string }{
 		{"@param", "Param"},
 		{"@stdin", "Stdin"},
 		{"@stdout", "Stdout"},
@@ -33,7 +54,8 @@ func writeMarkdown(out io.Writer, doc document) {
 		{"@exit", "Exit"},
 		{"@sideeffect", "Side Effect"},
 	}
-	for _, section := range sections {
+	var sections []tagSection
+	for _, section := range order {
 		items := groups[section.name]
 		if len(items) == 0 {
 			continue
@@ -45,18 +67,9 @@ func writeMarkdown(out io.Writer, doc document) {
 				return cmp.Or(cmp.Compare(len(a.argument), len(b.argument)), cmp.Compare(a.argument, b.argument))
 			})
 		}
-		fmt.Fprintf(out, "\n### %s\n\n", section.heading)
-		for _, item := range items {
-			switch {
-			case item.argument != "":
-				fmt.Fprintf(out, "- %s: %s\n", codeSpan(item.argument), item.description)
-			case item.name == "@sideeffect":
-				fmt.Fprintf(out, "- %s\n", item.description)
-			default:
-				fmt.Fprintln(out, item.description)
-			}
-		}
+		sections = append(sections, tagSection{section.heading, items})
 	}
+	return sections
 }
 
 func codeSpan(text string) string {

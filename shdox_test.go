@@ -366,8 +366,47 @@ check_file() { :; }
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
 	}
+	const formatted = `## Summary
+##
+## @param $2 Second
+## @param $10 Tenth
+## @param $1000000000000000000000000000000 Large
+## @stdin Input
+## @stdout **Output**
+## @stderr *Diagnostics*
+## @return 0 OK
+## @return 2 Difference
+## @return 255 Error
+## @exit 1 Missing
+## @exit 10 Fatal
+## @sideeffect Writes [logs](./logs)
+## @sideeffect Updates cache
+check_file() { :; }
+`
 	status, out, diagnostics = invoke(source, "fmt", "-")
-	if status != 0 || out != source || diagnostics != "" {
-		t.Fatalf("fmt changed tag order: %d, %q, %q", status, out, diagnostics)
+	if status != 0 || out != formatted || diagnostics != "" {
+		t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, formatted)
+	}
+	status, out, diagnostics = invoke(formatted, "generate", "-")
+	if status != 0 || out != want || diagnostics != "" {
+		t.Fatalf("generate after fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
+	}
+}
+
+func TestFormatTagSortPreservesLineLayout(t *testing.T) {
+	input := "## Summary\n##\r\n\t## @return\t10 Ten  \r\n" +
+		"  ## @param $1 File\n ## @return 2 Two\r\nf() { :; }"
+	want := "## Summary\n##\r\n\t## @param $1 File\r\n" +
+		"  ## @return 2 Two\n ## @return 10 Ten\r\nf() { :; }"
+	for _, source := range []string{input, want} {
+		status, out, diagnostics := invoke(source, "fmt", "-")
+		if status != 0 || out != want || diagnostics != "" {
+			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
+		}
+	}
+	input = strings.Replace(input, "@return\t10 Ten  ", "@return 10 Ten", 1)
+	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
+	if status != 1 || !strings.Contains(out, "+\t## @param $1 File\r\n") || diagnostics != "" {
+		t.Fatalf("fmt -d for reorder only = %d, %q, %q", status, out, diagnostics)
 	}
 }

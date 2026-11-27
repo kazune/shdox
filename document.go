@@ -273,7 +273,6 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 			}
 			seen[t.label()] = true
 			doc.tags = append(doc.tags, t)
-			a.formatted[line-1].text = prefix + " " + t.label() + " " + t.description
 		default:
 			a.formatted[line-1].text = prefix + " " + content
 			switch {
@@ -295,6 +294,17 @@ func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]
 			}
 		}
 		blank = false
+	}
+	if len(issues) == 0 {
+		// A valid block ends with all of its tag lines, with no gaps.
+		line := end - len(doc.tags)
+		for _, section := range orderedTagSections(doc.tags) {
+			for _, item := range section.items {
+				prefix := a.lines[line-1].text[:columns[line]+1]
+				a.formatted[line-1].text = prefix + " " + item.label() + " " + item.description
+				line++
+			}
+		}
 	}
 	return doc, issues
 }
