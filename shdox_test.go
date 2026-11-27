@@ -214,6 +214,59 @@ func TestErrorsAndPreflight(t *testing.T) {
 	}
 }
 
+func TestRejectBareCarriageReturnInDocumentation(t *testing.T) {
+	const message = "carriage return must be followed by LF\n"
+	for _, test := range []struct{ source, position string }{
+		{"## Summary\n## @stdout Output\n## @stdin Input\r", "-:3:16: "},
+		{"# Header\r\n:\n## あ\rvalue\r", "-:3:7: "},
+		{"## Summary\r\r\n", "-:1:11: "},
+	} {
+		for _, args := range [][]string{{"check", "-"}, {"fmt", "-"}, {"fmt", "-d", "-"}, {"generate", "-"}} {
+			status, out, diagnostics := invoke(test.source, args...)
+			if status != 2 || out != "" || diagnostics != test.position+message {
+				t.Errorf("%v with %q = %d, %q, %q", args, test.source, status, out, diagnostics)
+			}
+		}
+	}
+
+	dir := t.TempDir()
+	first, invalid, last := filepath.Join(dir, "first.sh"), filepath.Join(dir, "invalid.sh"), filepath.Join(dir, "last.sh")
+	const original = "#!/bin/bash\r\n##\tSummary\nf() { :; }"
+	writeTestFile(t, first, original)
+	writeTestFile(t, invalid, "## File\r")
+	writeTestFile(t, last, ":\n## Orphan\n")
+	status, out, diagnostics := invoke("", "fmt", "-w", first, invalid, last)
+	if status != 2 || out != "" || !strings.HasPrefix(diagnostics, invalid+":1:8: "+message+last+":2:1: ") {
+		t.Errorf("fmt -w = %d, %q, %q", status, out, diagnostics)
+	}
+	if data, err := os.ReadFile(first); err != nil || string(data) != original {
+		t.Errorf("preflight changed first input: %q, %v", data, err)
+	}
+	status, out, diagnostics = invoke(original, "fmt", "-")
+	if want := strings.Replace(original, "\t", " ", 1); status != 0 || out != want || diagnostics != "" {
+		t.Errorf("fmt with mixed line endings = %d, %q, %q; want %q", status, out, diagnostics, want)
+	}
+}
+
+func TestPreserveBareCarriageReturnOutsideDocumentation(t *testing.T) {
+	const source = "# Ordinary\r comment\r\n" +
+		": ## Inline\r comment\n" +
+		"printf '%s\\n' 'quoted\r text'\n" +
+		"cat <<'EOF'\n## Here\r doc\nEOF\n" +
+		"x=`\n## Ignored\r comment`\n" +
+		"##\tSummary\nf() { :; }\n# Tail\r"
+	for _, test := range []struct{ command, want string }{
+		{"check", ""},
+		{"fmt", strings.Replace(source, "##\tSummary", "## Summary", 1)},
+		{"generate", "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n"},
+	} {
+		status, out, diagnostics := invoke(source, test.command, "-")
+		if status != 0 || out != test.want || diagnostics != "" {
+			t.Errorf("%s = %d, %q, %q; want %q", test.command, status, out, diagnostics, test.want)
+		}
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {

@@ -180,6 +180,15 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 		delete(commentLines, line)
 		delete(comments, line)
 	}
+	// splitSource keeps the CR in a CRLF ending separate from the line text.
+	for i, line := range result.lines {
+		if comments[i+1] == 0 {
+			continue
+		}
+		if column := strings.IndexByte(line.text, '\r'); column >= 0 {
+			return result, []diagnostic{{line: i + 1, column: column + 1, message: "carriage return must be followed by LF"}}
+		}
+	}
 
 	headerEnd := 1
 	for headerEnd <= len(result.lines) && (commentLines[headerEnd] ||
