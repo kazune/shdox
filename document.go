@@ -139,6 +139,7 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 	var diagnostics []diagnostic
 	comments := make(map[int]int)
 	commentLines := make(map[int]bool)
+	closingBackquoteLines := make(map[int]bool)
 	functions := make(map[int][]*syntax.Lit)
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		switch node := node.(type) {
@@ -150,6 +151,11 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 				if strings.HasPrefix(text[column-1:], "##") {
 					comments[line] = column
 				}
+			}
+		case *syntax.CmdSubst:
+			if node.Backquotes {
+				line, _ := position(node.Right)
+				closingBackquoteLines[line] = true
 			}
 		case *syntax.FuncDecl:
 			line, column := position(node.Pos())
@@ -168,6 +174,12 @@ func analyze(name, source string, language syntax.LangVariant) (analysis, []diag
 		}
 		return true
 	})
+	// A closing backquote can end a shell comment before the physical line
+	// ends. Comment.End derives its offset from the decoded comment text.
+	for line := range closingBackquoteLines {
+		delete(commentLines, line)
+		delete(comments, line)
+	}
 
 	headerEnd := 1
 	for headerEnd <= len(result.lines) && (commentLines[headerEnd] ||

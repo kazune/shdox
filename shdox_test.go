@@ -99,6 +99,39 @@ func TestDetectionAndFormatting(t *testing.T) {
 	}
 }
 
+func TestCommentEndsAtClosingBackquote(t *testing.T) {
+	const source = "x=`\n## Summary` printf \"%s\\n\" \\ \nf() { :; }\n"
+	for _, command := range []string{"check", "fmt", "generate"} {
+		want := ""
+		if command == "fmt" {
+			want = source
+		}
+		status, out, diagnostics := invoke(source, command, "-")
+		if status != 0 || out != want || diagnostics != "" {
+			t.Errorf("%s = %d, %q, %q; want output %q", command, status, out, diagnostics, want)
+		}
+	}
+
+	const separated = "x=`\n## Orphan\n## ignored`\nf() { :; }\n"
+	status, _, diagnostics := invoke(separated, "check", "-")
+	if status != 1 || !strings.HasPrefix(diagnostics, "-:2:1: documentation block must immediately precede") {
+		t.Errorf("check = %d, %q; want placement diagnostic for line 2", status, diagnostics)
+	}
+}
+
+func TestFormatWholeLineComments(t *testing.T) {
+	for _, test := range []struct{ source, want string }{
+		{"\t##\t概要 \\\r\nf() { :; }\n", "\t## 概要 \\\r\nf() { :; }\n"},
+		{"##\tEOF", "## EOF"},
+		{"x=`\n ##\tEscaped \\`tick\\`\n f() { :; }\n`\n", "x=`\n ## Escaped \\`tick\\`\n f() { :; }\n`\n"},
+	} {
+		status, out, diagnostics := invoke(test.source, "fmt", "-")
+		if status != 0 || out != test.want || diagnostics != "" {
+			t.Errorf("fmt %q = %d, %q, %q; want %q", test.source, status, out, diagnostics, test.want)
+		}
+	}
+}
+
 func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
 	writeTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
