@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 func invoke(input string, args ...string) (int, string, string) {
@@ -76,8 +78,8 @@ func TestDetectionAndFormatting(t *testing.T) {
 			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
 		}
 	}
-	original, _ := analyze("-", before)
-	formatted, _ := analyze("-", want)
+	original, _ := analyze("-", before, syntax.LangAuto)
+	formatted, _ := analyze("-", want, syntax.LangAuto)
 	if len(original.documents) != 2 || !reflect.DeepEqual(original.documents, formatted.documents) {
 		t.Fatalf("parsed structure changed: %#v → %#v", original.documents, formatted.documents)
 	}
@@ -247,6 +249,89 @@ func TestWriteStopsAfterFailure(t *testing.T) {
 		data, err := os.ReadFile(item.name)
 		if err != nil || string(data) != item.want {
 			t.Fatalf("%s = %q, %v; want %q", item.name, data, err, item.want)
+		}
+	}
+}
+
+func TestDetectLanguage(t *testing.T) {
+	tests := []struct {
+		name, source string
+		want         syntax.LangVariant
+	}{
+		{"script.bash", "#!/bin/sh\n", syntax.LangPOSIX},
+		{"script.zsh", "#!/usr/bin/env bash\r\n", syntax.LangBash},
+		{"script.mksh", "#!/bin/unknown\n", syntax.LangMirBSDKorn},
+		{"script.bats", "", syntax.LangBats},
+		{"script.zsh", "", syntax.LangZsh},
+		{"script.bash", "", syntax.LangBash},
+		{"script.sh", "", syntax.LangBash},
+		{"-", "#!/usr/bin/env dash", syntax.LangPOSIX},
+		{"-", "", syntax.LangBash},
+	}
+	for _, test := range tests {
+		if got := detectLanguage(test.name, test.source); got != test.want {
+			t.Errorf("detectLanguage(%q, %q) = %s, want %s", test.name, test.source, got, test.want)
+		}
+	}
+}
+
+func TestLanguageSelectionAcrossInputs(t *testing.T) {
+	dir := t.TempDir()
+	first, second := filepath.Join(dir, "first.bash"), filepath.Join(dir, "second.sh")
+	posix := "## Portable\nf() { :; }\n"
+	bash := "## Bash\nf() { values=(one two); }\n"
+	writeTestFile(t, first, bash)
+	writeTestFile(t, second, "#!/bin/sh\n"+posix)
+	for _, command := range []string{"check", "fmt", "generate"} {
+		status, _, diagnostics := invoke("#!/usr/bin/env bash\n"+bash, command, first, second, "-")
+		if status != 0 || diagnostics != "" {
+			t.Fatalf("%s auto = %d, %q", command, status, diagnostics)
+		}
+		status, out, diagnostics := invoke("#!/usr/bin/env bash\n"+bash, command, "--lang=posix", first, second, "-")
+		if status != 2 || out != "" || !strings.Contains(diagnostics, first+":") ||
+			!strings.Contains(diagnostics, "-:3:") || strings.Contains(diagnostics, second+":") {
+			t.Fatalf("%s --lang=posix = %d, %q, %q", command, status, out, diagnostics)
+		}
+	}
+	writeTestFile(t, second, "#!/bin/sh\n"+bash)
+	if status, _, diagnostics := invoke("#!/bin/sh\n"+bash, "check", first, second, "-"); status != 2 ||
+		!strings.Contains(diagnostics, second+":") || !strings.Contains(diagnostics, "-:3:") {
+		t.Fatalf("auto must use POSIX for sh shebangs: %d, %q", status, diagnostics)
+	}
+	if status, _, diagnostics := invoke("#!/bin/sh\n"+bash, "check", first, "--lang", "bash", second, "-"); status != 0 || diagnostics != "" {
+		t.Fatalf("explicit Bash must override both shebangs: %d, %q", status, diagnostics)
+	}
+	for _, args := range [][]string{
+		{"check", "--lang"},
+		{"fmt", "--lang", "-"},
+		{"generate", "--lang=", "-"},
+		{"check", "--lang=fish", first, "-"},
+	} {
+		status, out, diagnostics := invoke("", args...)
+		if status != 2 || out != "" || !strings.HasPrefix(diagnostics, "shdox: ") {
+			t.Fatalf("%v = %d, %q, %q", args, status, out, diagnostics)
+		}
+	}
+}
+
+func TestLanguageSpecificDeclarations(t *testing.T) {
+	source := "## Shared\nfunction alpha beta { :; }\n"
+	want := "## `alpha`\n\nShared\n\n## `beta`\n\nShared\n"
+	status, out, diagnostics := invoke(source, "generate", "--lang=zsh", "-")
+	if status != 0 || out != want || diagnostics != "" {
+		t.Fatalf("Zsh multi-name generation = %d, %q, %q", status, out, diagnostics)
+	}
+	for _, test := range []struct{ language, declaration string }{
+		{"zsh", "() { :; }\n"},
+		{"bats", "@test \"works\" { :; }\n"},
+	} {
+		status, _, diagnostics := invoke(test.declaration, "check", "--lang", test.language, "-")
+		if status != 0 || diagnostics != "" {
+			t.Fatalf("%s input = %d, %q", test.language, status, diagnostics)
+		}
+		status, _, diagnostics = invoke("## Misplaced\n"+test.declaration, "check", "--lang", test.language, "-")
+		if status != 2 || !strings.Contains(diagnostics, "immediately precede") {
+			t.Fatalf("documented %s declaration = %d, %q", test.language, status, diagnostics)
 		}
 	}
 }

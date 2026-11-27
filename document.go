@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"mvdan.cc/sh/v3/fileutil"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -65,7 +67,23 @@ type analysis struct {
 	documents []document
 }
 
-func analyze(name, source string) (analysis, []diagnostic) {
+func detectLanguage(name, source string) syntax.LangVariant {
+	firstLine, _, _ := strings.Cut(source, "\n")
+	interpreter := fileutil.Shebang([]byte(firstLine))
+	if interpreter == "" {
+		switch extension := filepath.Ext(name); extension {
+		case ".bash", ".mksh", ".bats", ".zsh":
+			interpreter = extension[1:]
+		}
+	}
+	var variant syntax.LangVariant
+	if variant.Set(interpreter) == nil {
+		return variant
+	}
+	return syntax.LangBash
+}
+
+func analyze(name, source string, language syntax.LangVariant) (analysis, []diagnostic) {
 	var result analysis
 	if strings.HasPrefix(source, "\uFEFF") {
 		return result, []diagnostic{{1, 1, "UTF-8 BOM is not allowed"}}
@@ -88,7 +106,10 @@ func analyze(name, source string) (analysis, []diagnostic) {
 
 	// Normalize only the parser input so its line and column positions can
 	// address the original lines, including those terminated by CRLF.
-	parser := syntax.NewParser(syntax.Variant(syntax.LangBash), syntax.KeepComments(true))
+	if language == syntax.LangAuto {
+		language = detectLanguage(name, source)
+	}
+	parser := syntax.NewParser(syntax.Variant(language), syntax.KeepComments(true))
 	normalized := strings.ReplaceAll(source, "\r\n", "\n")
 	tree, err := parser.Parse(strings.NewReader(normalized), name)
 	if err != nil {
@@ -113,7 +134,7 @@ func analyze(name, source string) (analysis, []diagnostic) {
 	result.formatted = slices.Clone(result.lines)
 	var diagnostics []diagnostic
 	comments := make(map[int]int)
-	functions := make(map[int]string)
+	functions := make(map[int][]*syntax.Lit)
 	syntax.Walk(tree, func(node syntax.Node) bool {
 		switch node := node.(type) {
 		case *syntax.Comment:
@@ -125,7 +146,11 @@ func analyze(name, source string) (analysis, []diagnostic) {
 		case *syntax.FuncDecl:
 			line, column := position(node.Pos())
 			if strings.Trim(result.lines[line-1].text[:column-1], horizontal) == "" {
-				functions[line] = node.Name.Value
+				if node.Name != nil {
+					functions[line] = []*syntax.Lit{node.Name}
+				} else if len(node.Names) != 0 {
+					functions[line] = node.Names
+				}
 			}
 		}
 		return true
@@ -140,8 +165,12 @@ func analyze(name, source string) (analysis, []diagnostic) {
 		for comments[line] != 0 {
 			line++
 		}
-		doc, issues := result.parseBlock(start, line, functions[line], comments)
-		result.documents = append(result.documents, doc)
+		names := functions[line]
+		doc, issues := result.parseBlock(start, line, len(names) != 0, comments)
+		for _, name := range names {
+			doc.name = name.Value
+			result.documents = append(result.documents, doc)
+		}
 		diagnostics = append(diagnostics, issues...)
 	}
 	return result, diagnostics
@@ -193,13 +222,13 @@ func decimal(text string) bool {
 	return true
 }
 
-func (a *analysis) parseBlock(start, end int, name string, columns map[int]int) (document, []diagnostic) {
-	doc := document{name: name}
+func (a *analysis) parseBlock(start, end int, hasFunction bool, columns map[int]int) (document, []diagnostic) {
+	var doc document
 	var issues []diagnostic
 	report := func(line int, message string) {
 		issues = append(issues, diagnostic{line, columns[line], message})
 	}
-	if name == "" {
+	if !hasFunction {
 		report(start, "documentation block must immediately precede a function declaration")
 	}
 

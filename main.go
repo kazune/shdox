@@ -7,13 +7,16 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type options struct {
-	command string
-	diff    bool
-	write   bool
-	files   []string
+	command  string
+	language syntax.LangVariant
+	diff     bool
+	write    bool
+	files    []string
 }
 
 func parseArgs(args []string) (options, error) {
@@ -22,6 +25,7 @@ func parseArgs(args []string) (options, error) {
 		return opts, fmt.Errorf("expected check, fmt, or generate")
 	}
 	opts.command = args[0]
+	opts.language = syntax.LangAuto
 	switch opts.command {
 	case "check", "fmt", "generate":
 	default:
@@ -29,12 +33,30 @@ func parseArgs(args []string) (options, error) {
 	}
 
 	stdin, endOfOptions := false, false
-	for _, arg := range args[1:] {
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		option, value, hasValue := strings.Cut(arg, "=")
 		switch {
 		case !endOfOptions && arg == "--":
 			endOfOptions = true
 		case !endOfOptions && arg != "-" && strings.HasPrefix(arg, "-"):
 			switch {
+			case option == "--lang":
+				if !hasValue {
+					i++
+					if i == len(args) || strings.HasPrefix(args[i], "-") {
+						return opts, fmt.Errorf("--lang requires a value")
+					}
+					value = args[i]
+				}
+				switch value {
+				case "bash", "posix", "mksh", "bats", "zsh":
+					if err := opts.language.Set(value); err != nil {
+						return opts, err
+					}
+				default:
+					return opts, fmt.Errorf("unknown language %q", value)
+				}
 			case opts.command == "fmt" && arg == "-d":
 				opts.diff = true
 			case opts.command == "fmt" && arg == "-w":
@@ -88,7 +110,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			failed = true
 			continue
 		}
-		result, issues := analyze(name, string(data))
+		result, issues := analyze(name, string(data), opts.language)
 		for _, issue := range issues {
 			if issue.line != 0 {
 				fmt.Fprintf(stderr, "%s:%d:%d: %s\n", name, issue.line, issue.column, issue.message)
