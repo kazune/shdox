@@ -27,6 +27,5 @@ test:
 build:
 	go build -trimpath -o "$(BINARY)" .
 
-ci: export GOOS := linux
 ci: fmt-check lint test
 	bash scripts/ci.sh
