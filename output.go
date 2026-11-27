@@ -6,6 +6,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 func writeSource(out io.StringWriter, lines []sourceLine) {
@@ -148,7 +150,8 @@ func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
 	}
 	const contextLines = 3
 	lines := diffLines(before, after)
-	fmt.Fprintf(out, "--- %s\n+++ %s\n", name, name)
+	label := quoteDiffName(name)
+	fmt.Fprintf(out, "--- %s\n+++ %s\n", label, label)
 
 	oldOffset, newOffset, processed := 0, 0, 0
 	for first := 0; first < len(lines); {
@@ -186,6 +189,52 @@ func writeDiff(out io.Writer, name string, before, after []sourceLine) bool {
 		first = end
 	}
 	return true
+}
+
+func quoteDiffName(name string) string {
+	needsQuotes := func(r rune) bool {
+		return r == ' ' || r == '"' || r == '\\' || !unicode.IsPrint(r)
+	}
+	if utf8.ValidString(name) && strings.IndexFunc(name, needsQuotes) == -1 {
+		return name
+	}
+
+	var quoted strings.Builder
+	quoted.WriteByte('"')
+	for name != "" {
+		r, size := utf8.DecodeRuneInString(name)
+		text := name[:size]
+		name = name[size:]
+		switch r {
+		case '"', '\\':
+			quoted.WriteByte('\\')
+			quoted.WriteString(text)
+		case '\a':
+			quoted.WriteString(`\a`)
+		case '\b':
+			quoted.WriteString(`\b`)
+		case '\f':
+			quoted.WriteString(`\f`)
+		case '\n':
+			quoted.WriteString(`\n`)
+		case '\r':
+			quoted.WriteString(`\r`)
+		case '\t':
+			quoted.WriteString(`\t`)
+		case '\v':
+			quoted.WriteString(`\v`)
+		default:
+			if unicode.IsPrint(r) && !(r == utf8.RuneError && size == 1) {
+				quoted.WriteString(text)
+				continue
+			}
+			for i := range len(text) {
+				fmt.Fprintf(&quoted, `\%03o`, text[i])
+			}
+		}
+	}
+	quoted.WriteByte('"')
+	return quoted.String()
 }
 
 func diffRange(start, count int) string {

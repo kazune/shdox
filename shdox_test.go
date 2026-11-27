@@ -160,6 +160,30 @@ func TestDiff(t *testing.T) {
 	}
 }
 
+func TestDiffQuotesInputNames(t *testing.T) {
+	before := splitSource("##\tSummary\n")
+	after := splitSource("## Summary\n")
+	const hunk = "@@ -1 +1 @@\n-##\tSummary\n+## Summary\n"
+	for _, test := range []struct{ name, label string }{
+		{"script.sh", "script.sh"},
+		{"名前.sh", "名前.sh"},
+		{"-", "-"},
+		{"two words.sh", `"two words.sh"`},
+		{"part\nnext.sh", `"part\nnext.sh"`},
+		{"part\t\rnext.sh", `"part\t\rnext.sh"`},
+		{`quote"and\slash.sh`, `"quote\"and\\slash.sh"`},
+		{"controls\a\b\f\v\x01\x7f.sh", `"controls\a\b\f\v\001\177.sh"`},
+		{"invalid\xff.sh", `"invalid\377.sh"`},
+		{"separator\u2028.sh", `"separator\342\200\250.sh"`},
+	} {
+		var out strings.Builder
+		want := "--- " + test.label + "\n+++ " + test.label + "\n" + hunk
+		if !writeDiff(&out, test.name, before, after) || out.String() != want {
+			t.Errorf("diff for %q = %q; want %q", test.name, out.String(), want)
+		}
+	}
+}
+
 func TestErrorsAndPreflight(t *testing.T) {
 	dir := t.TempDir()
 	first, broken := filepath.Join(dir, "first.sh"), filepath.Join(dir, "broken.sh")
