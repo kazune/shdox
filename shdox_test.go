@@ -18,6 +18,93 @@ func invoke(input string, args ...string) (int, string, string) {
 	return status, stdout.String(), stderr.String()
 }
 
+var (
+	shellPosType     = reflect.TypeOf(syntax.Pos{})
+	shellCommentType = reflect.TypeOf(syntax.Comment{})
+)
+
+func equalShellAST(a, b reflect.Value) bool {
+	if !a.IsValid() || !b.IsValid() {
+		return a.IsValid() == b.IsValid()
+	}
+	if a.Type() != b.Type() {
+		return false
+	}
+	if a.Type() == shellPosType || a.Type() == shellCommentType {
+		return true
+	}
+	switch a.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() == b.IsNil()
+		}
+		return equalShellAST(a.Elem(), b.Elem())
+	case reflect.Struct:
+		for i := 0; i < a.NumField(); i++ {
+			fieldType := a.Type().Field(i).Type
+			if fieldType == shellPosType || fieldType == shellCommentType ||
+				fieldType.Kind() == reflect.Slice && fieldType.Elem() == shellCommentType {
+				continue
+			}
+			if !equalShellAST(a.Field(i), b.Field(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Slice, reflect.Array:
+		if a.Kind() == reflect.Slice && a.Type().Elem() == shellCommentType {
+			return true
+		}
+		if a.Len() != b.Len() || a.Kind() == reflect.Slice && a.IsNil() != b.IsNil() {
+			return false
+		}
+		for i := 0; i < a.Len(); i++ {
+			if !equalShellAST(a.Index(i), b.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() == b.IsNil()
+		}
+		if a.Len() != b.Len() {
+			return false
+		}
+		iter := a.MapRange()
+		for iter.Next() {
+			other := b.MapIndex(iter.Key())
+			if !other.IsValid() || !equalShellAST(iter.Value(), other) {
+				return false
+			}
+		}
+		return true
+	default:
+		return a.Equal(b)
+	}
+}
+
+func parseFormatTestAST(t *testing.T, source, name string, options ...string) *syntax.File {
+	t.Helper()
+	args := append([]string{"check"}, options...)
+	args = append(args, "--", name)
+	opts, err := parseArgs(args)
+	if err != nil {
+		t.Fatalf("parse test options for %q: %v", name, err)
+	}
+	language := opts.language
+	if language == syntax.LangAuto {
+		language = detectLanguage(name, source)
+	}
+	normalized := strings.ReplaceAll(source, "\r\n", "\n")
+	parser := syntax.NewParser(syntax.Variant(language), syntax.KeepComments(true))
+	tree, err := parser.Parse(strings.NewReader(normalized), name)
+	if err != nil {
+		t.Fatalf("parse shell AST for %q: %v", name, err)
+	}
+	return tree
+}
+
 func checkFormatInvariants(t *testing.T, source, name string, options ...string) (formatted, markdown string) {
 	t.Helper()
 	input, path := source, name
@@ -40,8 +127,13 @@ func checkFormatInvariants(t *testing.T, source, name string, options ...string)
 	if out := invokeSuccess("check", "before"); out != "" {
 		t.Fatalf("check before formatting %q wrote %q", name, out)
 	}
+	originalAST := parseFormatTestAST(t, source, path, options...)
 	markdown = invokeSuccess("generate", "before")
 	formatted = invokeSuccess("fmt", "before")
+	formattedAST := parseFormatTestAST(t, formatted, path, options...)
+	if !equalShellAST(reflect.ValueOf(originalAST), reflect.ValueOf(formattedAST)) {
+		t.Errorf("shell AST changed outside comments when formatting %q", name)
+	}
 	if name == "-" {
 		input = formatted
 	} else {
