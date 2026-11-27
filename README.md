@@ -8,37 +8,11 @@ shdox は、シェルスクリプトと関数の `##` ドキュメントコメ�
 コメントの構造やタグの構文・出現回数・許容値を明確に定めることで、CI での形式検証と Markdown 生成に同じコメントを使えます。
 シェルの位置引数には静的な型宣言がないため、`@param` は引数の位置と説明文で構成し、必要な値の形式や条件は説明文に記述できます。
 
-## ビルド
+## インストール
 
-Go 1.26.0 以上と GNU Make が必要です。
-リポジトリのルートでビルドします。
-
-```sh
-make build
-```
-
-## 開発
-
-| コマンド | 動作 |
-| --- | --- |
-| `make fmt` | Go ソースを `gofmt` で整形する。 |
-| `make fmt-check` | 整形が必要なファイルを表示し、失敗する。 |
-| `make lint` | `go vet ./...` と ShellCheck でシェルスクリプトを検査する。 |
-| `make test` | cgo を無効にしてテストを実行する。 |
-| `make check` | lint、整形チェック、テストをまとめて実行する。 |
-| `make build` | cgo を無効にしてビルドし、既定では `./shdox` に出力する。 |
-| `make clean` | ビルド成果物を削除する。 |
-| `make ci` | 整形チェック、lint、テスト、ビルド、ELF 検査、CLI の動作確認を実行する。 |
-
-`make lint`、`make check`、`make ci` には ShellCheck が必要です。
-`make ci` は Bash と `readelf` を備えた Linux amd64・arm64 環境で実行します。
-GitHub Actions は Linux と macOS の amd64・arm64 でテストし、Linux では追加の ELF と CLI の確認も行います。
-
-## リリース
-
-`v` で始まる有効なセマンティックバージョンタグを push すると、CI 成功後に GitHub Release を作成または更新します。
-Release には Linux と macOS の amd64・arm64 向けアーカイブと `SHA256SUMS.txt` を添付します。
-各アーカイブには実行ファイル、README、CHANGELOG、ライセンス、仕様書を含めます。
+[GitHub Releases](https://github.com/kazune/shdox/releases/latest) から OS とアーキテクチャに合う tarball を取得して展開し、`shdox` を `PATH` 上に置いてください。
+Go 1.26.0 以上を使う場合は、`go install github.com/kazune/shdox@latest` でもインストールできます。
+ソースからのビルド、開発コマンド、リリース手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## コメントの書き方
 
