@@ -25,7 +25,7 @@ func TestAtomicWritePreservesLinkAndMode(t *testing.T) {
 	relativeTarget := filepath.Join("target", "script.sh")
 	const original = "##\tSummary\nf() { :; }\n"
 	const formatted = "## Summary\nf() { :; }\n"
-	writeTestFile(t, target, original)
+	writeValidTestFile(t, target, original)
 	if err := os.Chmod(target, 0o751); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestAtomicWriteFailureKeepsOriginal(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "script.sh")
 	const original = "##\tSummary\nf() { :; }\n"
-	writeTestFile(t, target, original)
+	writeValidTestFile(t, target, original)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

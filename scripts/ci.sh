@@ -26,13 +26,29 @@ if grep -Eq '^[[:space:]]*INTERP[[:space:]]' <<< "$segments" ||
 fi
 
 cd "$workdir" || exit 1
+run_success() {
+	local command=$1 output=$2
+	if ! "$binary" "$command" script.sh > "$output" 2> diagnostics || [[ -s diagnostics ]]; then
+		cat diagnostics >&2
+		return 1
+	fi
+}
+
 printf '##\tCheck the file.\ncheck_file() { :; }\n' > script.sh
-"$binary" check script.sh
+run_success check check.before
+test ! -s check.before
+run_success generate before.md
+run_success fmt formatted.sh
 status=0
 "$binary" fmt -d script.sh > format.diff || status=$?
 test "$status" -eq 1
 grep -Fxq '+## Check the file.' format.diff
 "$binary" fmt -w script.sh
+cmp formatted.sh script.sh
+run_success check check.after
+cmp check.before check.after
+run_success fmt reformatted.sh
+cmp formatted.sh reformatted.sh
 "$binary" fmt -d script.sh > format.diff
 test ! -s format.diff
 
@@ -45,5 +61,6 @@ cat > expected.md <<'MARKDOWN'
 
 Check the file.
 MARKDOWN
-"$binary" generate script.sh > actual.md
+run_success generate actual.md
+cmp before.md actual.md
 diff -u expected.md actual.md

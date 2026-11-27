@@ -17,6 +17,53 @@ func invoke(input string, args ...string) (int, string, string) {
 	return status, stdout.String(), stderr.String()
 }
 
+func checkFormatInvariants(t *testing.T, source, name string, options ...string) (formatted, markdown string) {
+	t.Helper()
+	input, path := source, name
+	if name != "-" {
+		path = filepath.Join(t.TempDir(), filepath.Base(name))
+		writeTestFile(t, path, source)
+		input = ""
+	}
+	args := append([]string{""}, options...)
+	args = append(args, "--", path)
+	invokeSuccess := func(command, phase string) string {
+		t.Helper()
+		args[0] = command
+		status, out, diagnostics := invoke(input, args...)
+		if status != 0 || diagnostics != "" {
+			t.Fatalf("%s %s formatting %q = %d, %q, %q", command, phase, name, status, out, diagnostics)
+		}
+		return out
+	}
+	if out := invokeSuccess("check", "before"); out != "" {
+		t.Fatalf("check before formatting %q wrote %q", name, out)
+	}
+	markdown = invokeSuccess("generate", "before")
+	formatted = invokeSuccess("fmt", "before")
+	if name == "-" {
+		input = formatted
+	} else {
+		writeTestFile(t, path, formatted)
+	}
+	if out := invokeSuccess("check", "after"); out != "" {
+		t.Errorf("check after formatting %q wrote %q", name, out)
+	}
+	if out := invokeSuccess("generate", "after"); out != markdown {
+		t.Errorf("generate after formatting %q = %q; before = %q", name, out, markdown)
+	}
+	if out := invokeSuccess("fmt", "after"); out != formatted {
+		t.Errorf("fmt after formatting %q = %q; first pass = %q", name, out, formatted)
+	}
+	return formatted, markdown
+}
+
+func writeValidTestFile(t *testing.T, name, source string, options ...string) {
+	t.Helper()
+	checkFormatInvariants(t, source, name, options...)
+	writeTestFile(t, name, source)
+}
+
 func TestDocumentGrammar(t *testing.T) {
 	tests := []struct {
 		name, block, issue string
@@ -50,12 +97,12 @@ func TestDocumentGrammar(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			status, out, diagnostics := invoke(test.block+"\nf() { :; }\n", "check", "-")
+			source := test.block + "\nf() { :; }\n"
 			if test.issue == "" {
-				if status != 0 || out != "" || diagnostics != "" {
-					t.Fatalf("check = %d, %q, %q", status, out, diagnostics)
-				}
-			} else if status != 1 || out != "" || !strings.Contains(diagnostics, test.issue) {
+				checkFormatInvariants(t, source, "-")
+				return
+			}
+			if status, out, diagnostics := invoke(source, "check", "-"); status != 1 || out != "" || !strings.Contains(diagnostics, test.issue) {
 				t.Fatalf("check = %d, %q, %q; expected %q", status, out, diagnostics, test.issue)
 			}
 		})
@@ -76,6 +123,7 @@ func TestDetectionAndFormatting(t *testing.T) {
 		"##\t@param \t$1\t *File*  ", "## @param $1 *File*",
 	).Replace(before)
 
+	checkFormatInvariants(t, before, "-")
 	for _, input := range []string{before, before, want} {
 		status, out, diagnostics := invoke(input, "fmt", "-")
 		if status != 0 || out != want || diagnostics != "" {
@@ -101,15 +149,9 @@ func TestDetectionAndFormatting(t *testing.T) {
 
 func TestCommentEndsAtClosingBackquote(t *testing.T) {
 	const source = "x=`\n## Summary` printf \"%s\\n\" \\ \nf() { :; }\n"
-	for _, command := range []string{"check", "fmt", "generate"} {
-		want := ""
-		if command == "fmt" {
-			want = source
-		}
-		status, out, diagnostics := invoke(source, command, "-")
-		if status != 0 || out != want || diagnostics != "" {
-			t.Errorf("%s = %d, %q, %q; want output %q", command, status, out, diagnostics, want)
-		}
+	formatted, markdown := checkFormatInvariants(t, source, "-")
+	if formatted != source || markdown != "" {
+		t.Errorf("fmt = %q, generate = %q; want fmt output %q and empty Markdown", formatted, markdown, source)
 	}
 
 	const separated = "x=`\n## Orphan\n## ignored`\nf() { :; }\n"
@@ -125,30 +167,31 @@ func TestFormatWholeLineComments(t *testing.T) {
 		{"##\tEOF", "## EOF"},
 		{"x=`\n ##\tEscaped \\`tick\\`\n f() { :; }\n`\n", "x=`\n ## Escaped \\`tick\\`\n f() { :; }\n`\n"},
 	} {
-		status, out, diagnostics := invoke(test.source, "fmt", "-")
-		if status != 0 || out != test.want || diagnostics != "" {
-			t.Errorf("fmt %q = %d, %q, %q; want %q", test.source, status, out, diagnostics, test.want)
+		out, _ := checkFormatInvariants(t, test.source, "-")
+		if out != test.want {
+			t.Errorf("fmt %q = %q; want %q", test.source, out, test.want)
 		}
 	}
 }
 
 func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
-	writeTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
+	writeValidTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
 	input := "## Second\n## Continuation\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
+	checkFormatInvariants(t, input, "-")
 	want := "# " + codeSpan(first) + "\n\n## Functions\n\n### `f`\n\n*First*\n\n# `-`\n\n## Functions\n\n### `f`\n\nSecond\nContinuation\n\n#### Description\n\n[Link](./target)\n\n#### Return\n\n- `255`: **Failure**\n"
 	status, out, diagnostics := invoke(input, "generate", first, "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
 	}
-	status, out, diagnostics = invoke("f() { :; }", "generate", "-")
-	if status != 0 || out != "" || diagnostics != "" {
-		t.Fatalf("empty generate = %d, %q, %q", status, out, diagnostics)
+	if _, out := checkFormatInvariants(t, "f() { :; }", "-"); out != "" {
+		t.Fatalf("empty generate = %q", out)
 	}
 }
 
 func TestDiff(t *testing.T) {
 	input := ":\n:\n:\n:\n##\tSummary\nf() { :; }\n:\n:"
+	checkFormatInvariants(t, input, "-")
 	want := "--- -\n+++ -\n@@ -2,7 +2,7 @@\n :\n :\n :\n-##\tSummary\n+## Summary\n f() { :; }\n :\n :\n\\ No newline at end of file\n"
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || out != want || diagnostics != "" {
@@ -161,7 +204,9 @@ func TestDiff(t *testing.T) {
 }
 
 func TestDiffQuotesInputNames(t *testing.T) {
-	before := splitSource("##\tSummary\n")
+	const source = "##\tSummary\n"
+	checkFormatInvariants(t, source, "-")
+	before := splitSource(source)
 	after := splitSource("## Summary\n")
 	const hunk = "@@ -1 +1 @@\n-##\tSummary\n+## Summary\n"
 	for _, test := range []struct{ name, label string }{
@@ -191,7 +236,7 @@ func TestErrorsAndPreflight(t *testing.T) {
 	invalidSource := "\t### Bad\n##\n## @unknown Err\nf() { :; }\n"
 	writeTestFile(t, invalidDoc, invalidSource)
 	original := "##\tFirst\nf() { :; }\n"
-	writeTestFile(t, first, original)
+	writeValidTestFile(t, first, original)
 	writeTestFile(t, broken, "if\n")
 	for _, args := range [][]string{
 		{"check"}, {"fmt"}, {"fmt", "-d"}, {"fmt", "-w"}, {"generate"},
@@ -256,7 +301,7 @@ func TestRejectBareCarriageReturnInDocumentation(t *testing.T) {
 	dir := t.TempDir()
 	first, invalid, last := filepath.Join(dir, "first.sh"), filepath.Join(dir, "invalid.sh"), filepath.Join(dir, "last.sh")
 	const original = "#!/bin/bash\r\n##\tSummary\nf() { :; }"
-	writeTestFile(t, first, original)
+	writeValidTestFile(t, first, original)
 	writeTestFile(t, invalid, "## File\r")
 	writeTestFile(t, last, ":\n## Orphan\n")
 	status, out, diagnostics := invoke("", "fmt", "-w", first, invalid, last)
@@ -266,9 +311,9 @@ func TestRejectBareCarriageReturnInDocumentation(t *testing.T) {
 	if data, err := os.ReadFile(first); err != nil || string(data) != original {
 		t.Errorf("preflight changed first input: %q, %v", data, err)
 	}
-	status, out, diagnostics = invoke(original, "fmt", "-")
-	if want := strings.Replace(original, "\t", " ", 1); status != 0 || out != want || diagnostics != "" {
-		t.Errorf("fmt with mixed line endings = %d, %q, %q; want %q", status, out, diagnostics, want)
+	out, _ = checkFormatInvariants(t, original, "-")
+	if want := strings.Replace(original, "\t", " ", 1); out != want {
+		t.Errorf("fmt with mixed line endings = %q; want %q", out, want)
 	}
 }
 
@@ -279,15 +324,12 @@ func TestPreserveBareCarriageReturnOutsideDocumentation(t *testing.T) {
 		"cat <<'EOF'\n## Here\r doc\nEOF\n" +
 		"x=`\n## Ignored\r comment`\n" +
 		"##\tSummary\nf() { :; }\n# Tail\r"
-	for _, test := range []struct{ command, want string }{
-		{"check", ""},
-		{"fmt", strings.Replace(source, "##\tSummary", "## Summary", 1)},
-		{"generate", "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n"},
-	} {
-		status, out, diagnostics := invoke(source, test.command, "-")
-		if status != 0 || out != test.want || diagnostics != "" {
-			t.Errorf("%s = %d, %q, %q; want %q", test.command, status, out, diagnostics, test.want)
-		}
+	formatted, markdown := checkFormatInvariants(t, source, "-")
+	if want := strings.Replace(source, "##\tSummary", "## Summary", 1); formatted != want {
+		t.Errorf("fmt = %q; want %q", formatted, want)
+	}
+	if want := "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n"; markdown != want {
+		t.Errorf("generate = %q; want %q", markdown, want)
 	}
 }
 
@@ -298,17 +340,19 @@ func (failingWriter) Write([]byte) (int, error) {
 }
 
 func TestOutputFailure(t *testing.T) {
+	const source = "##\tSummary\nf() { :; }\n"
+	checkFormatInvariants(t, source, "-")
 	var diagnostics strings.Builder
-	if status := run([]string{"fmt", "-d", "-"}, strings.NewReader("##\tSummary\nf() { :; }\n"), failingWriter{}, &diagnostics); status != 2 || !strings.Contains(diagnostics.String(), "write failed") {
+	if status := run([]string{"fmt", "-d", "-"}, strings.NewReader(source), failingWriter{}, &diagnostics); status != 2 || !strings.Contains(diagnostics.String(), "write failed") {
 		t.Fatalf("output failure = %d, %q", status, &diagnostics)
 	}
 }
 
 func TestLongIndent(t *testing.T) {
 	input := strings.Repeat(" ", 20_000) + "##\tSummary\nf() { :; }\n"
-	status, out, diagnostics := invoke(input, "fmt", "-")
-	if status != 0 || out != strings.Replace(input, "\t", " ", 1) || diagnostics != "" {
-		t.Fatalf("long indent failed: status %d, diagnostics %q", status, diagnostics)
+	out, _ := checkFormatInvariants(t, input, "-")
+	if out != strings.Replace(input, "\t", " ", 1) {
+		t.Fatal("fmt did not preserve the long indent")
 	}
 }
 
@@ -323,8 +367,9 @@ func TestMultipleInputs(t *testing.T) {
 	dir := t.TempDir()
 	first, second := filepath.Join(dir, "first.sh"), filepath.Join(dir, "second.sh")
 	input := "##\tSummary\nf() { :; }"
-	writeTestFile(t, first, input)
-	writeTestFile(t, second, strings.Replace(input, "Summary", "Second", 1))
+	checkFormatInvariants(t, input, "-")
+	writeValidTestFile(t, first, input)
+	writeValidTestFile(t, second, strings.Replace(input, "Summary", "Second", 1))
 	status, out, diagnostics := invoke(input, "fmt", first, "-", second)
 	want := "## Summary\nf() { :; }## Summary\nf() { :; }## Second\nf() { :; }"
 	if status != 0 || out != want || diagnostics != "" {
@@ -344,7 +389,7 @@ func TestWriteStopsAfterFailure(t *testing.T) {
 	first, blocked, last := filepath.Join(dir, "first.sh"), filepath.Join(dir, "blocked.sh"), filepath.Join(dir, "last.sh")
 	original := "##\tSummary\nf() { :; }\n"
 	for _, name := range []string{first, blocked, last} {
-		writeTestFile(t, name, original)
+		writeValidTestFile(t, name, original)
 	}
 	if err := os.Chmod(blocked, 0o400); err != nil {
 		t.Fatal(err)
@@ -386,6 +431,7 @@ func TestDetectLanguage(t *testing.T) {
 		if got := detectLanguage(test.name, test.source); got != test.want {
 			t.Errorf("detectLanguage(%q, %q) = %s, want %s", test.name, test.source, got, test.want)
 		}
+		checkFormatInvariants(t, test.source, test.name)
 	}
 }
 
@@ -394,25 +440,32 @@ func TestLanguageSelectionAcrossInputs(t *testing.T) {
 	first, second := filepath.Join(dir, "first.bash"), filepath.Join(dir, "second.sh")
 	posix := "## Portable\nf() { :; }\n"
 	bash := "## Bash\nf() { values=(one two); }\n"
-	writeTestFile(t, first, bash)
-	writeTestFile(t, second, "#!/bin/sh\n"+posix)
+	const bashOverride = "--lang=bash"
+	stdin := "#!/usr/bin/env bash\n" + bash
+	checkFormatInvariants(t, stdin, "-")
+	checkFormatInvariants(t, bash, first, bashOverride)
+	checkFormatInvariants(t, "#!/bin/sh\n"+posix, second, "--lang=posix")
+	writeValidTestFile(t, first, bash)
+	writeValidTestFile(t, second, "#!/bin/sh\n"+posix)
 	for _, command := range []string{"check", "fmt", "generate"} {
-		status, _, diagnostics := invoke("#!/usr/bin/env bash\n"+bash, command, first, second, "-")
+		status, _, diagnostics := invoke(stdin, command, first, second, "-")
 		if status != 0 || diagnostics != "" {
 			t.Fatalf("%s auto = %d, %q", command, status, diagnostics)
 		}
-		status, out, diagnostics := invoke("#!/usr/bin/env bash\n"+bash, command, "--lang=posix", first, second, "-")
+		status, out, diagnostics := invoke(stdin, command, "--lang=posix", first, second, "-")
 		if status != 2 || out != "" || !strings.Contains(diagnostics, first+":") ||
 			!strings.Contains(diagnostics, "-:3:") || strings.Contains(diagnostics, second+":") {
 			t.Fatalf("%s --lang=posix = %d, %q, %q", command, status, out, diagnostics)
 		}
 	}
-	writeTestFile(t, second, "#!/bin/sh\n"+bash)
-	if status, _, diagnostics := invoke("#!/bin/sh\n"+bash, "check", first, second, "-"); status != 2 ||
+	stdin = "#!/bin/sh\n" + bash
+	writeValidTestFile(t, second, stdin, bashOverride)
+	checkFormatInvariants(t, stdin, "-", bashOverride)
+	if status, _, diagnostics := invoke(stdin, "check", first, second, "-"); status != 2 ||
 		!strings.Contains(diagnostics, second+":") || !strings.Contains(diagnostics, "-:3:") {
 		t.Fatalf("auto must use POSIX for sh shebangs: %d, %q", status, diagnostics)
 	}
-	if status, _, diagnostics := invoke("#!/bin/sh\n"+bash, "check", first, "--lang", "bash", second, "-"); status != 0 || diagnostics != "" {
+	if status, _, diagnostics := invoke(stdin, "check", first, "--lang", "bash", second, "-"); status != 0 || diagnostics != "" {
 		t.Fatalf("explicit Bash must override both shebangs: %d, %q", status, diagnostics)
 	}
 	for _, args := range [][]string{
@@ -431,19 +484,15 @@ func TestLanguageSelectionAcrossInputs(t *testing.T) {
 func TestLanguageSpecificDeclarations(t *testing.T) {
 	source := "## Shared\nfunction alpha beta { :; }\n"
 	want := "# `-`\n\n## Functions\n\n### `alpha`\n\nShared\n\n### `beta`\n\nShared\n"
-	status, out, diagnostics := invoke(source, "generate", "--lang=zsh", "-")
-	if status != 0 || out != want || diagnostics != "" {
-		t.Fatalf("Zsh multi-name generation = %d, %q, %q", status, out, diagnostics)
+	if _, out := checkFormatInvariants(t, source, "-", "--lang=zsh"); out != want {
+		t.Fatalf("Zsh multi-name generation = %q; want %q", out, want)
 	}
 	for _, test := range []struct{ language, declaration string }{
 		{"zsh", "() { :; }\n"},
 		{"bats", "@test \"works\" { :; }\n"},
 	} {
-		status, _, diagnostics := invoke(test.declaration, "check", "--lang", test.language, "-")
-		if status != 0 || diagnostics != "" {
-			t.Fatalf("%s input = %d, %q", test.language, status, diagnostics)
-		}
-		status, _, diagnostics = invoke("## Misplaced\n"+test.declaration, "check", "--lang", test.language, "-")
+		checkFormatInvariants(t, test.declaration, "-", "--lang", test.language)
+		status, _, diagnostics := invoke("## Misplaced\n"+test.declaration, "check", "--lang", test.language, "-")
 		if status != 1 || !strings.Contains(diagnostics, "immediately precede") {
 			t.Fatalf("documented %s declaration = %d, %q", test.language, status, diagnostics)
 		}
@@ -476,10 +525,6 @@ check_file() { :; }
 		"#### Return\n\n- `0`: OK\n- `2`: Difference\n- `255`: Error\n\n" +
 		"#### Exit\n\n- `1`: Missing\n- `10`: Fatal\n\n" +
 		"#### Side Effect\n\n- Writes [logs](./logs)\n- Updates cache\n"
-	status, out, diagnostics := invoke(source, "generate", "-")
-	if status != 0 || out != want || diagnostics != "" {
-		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
-	}
 	const formatted = `## Summary
 ##
 ## @param $2 Second
@@ -497,13 +542,12 @@ check_file() { :; }
 ## @sideeffect Updates cache
 check_file() { :; }
 `
-	status, out, diagnostics = invoke(source, "fmt", "-")
-	if status != 0 || out != formatted || diagnostics != "" {
-		t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, formatted)
+	actualSource, markdown := checkFormatInvariants(t, source, "-")
+	if markdown != want {
+		t.Errorf("generate = %q; want %q", markdown, want)
 	}
-	status, out, diagnostics = invoke(formatted, "generate", "-")
-	if status != 0 || out != want || diagnostics != "" {
-		t.Fatalf("generate after fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
+	if actualSource != formatted {
+		t.Errorf("fmt = %q; want %q", actualSource, formatted)
 	}
 }
 
@@ -512,13 +556,11 @@ func TestFormatTagSortPreservesLineLayout(t *testing.T) {
 		"  ## @param $1 File\n ## @return 2 Two\r\nf() { :; }"
 	want := "## Summary\n##\r\n\t## @param $1 File\r\n" +
 		"  ## @return 2 Two\n ## @return 10 Ten\r\nf() { :; }"
-	for _, source := range []string{input, want} {
-		status, out, diagnostics := invoke(source, "fmt", "-")
-		if status != 0 || out != want || diagnostics != "" {
-			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
-		}
+	if out, _ := checkFormatInvariants(t, input, "-"); out != want {
+		t.Fatalf("fmt = %q; want %q", out, want)
 	}
 	input = strings.Replace(input, "@return\t10 Ten  ", "@return 10 Ten", 1)
+	checkFormatInvariants(t, input, "-")
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || !strings.Contains(out, "+\t## @param $1 File\r\n") || diagnostics != "" {
 		t.Fatalf("fmt -d for reorder only = %d, %q, %q", status, out, diagnostics)
@@ -550,20 +592,13 @@ func TestCheckStatusPrecedence(t *testing.T) {
 func TestFormatRepeatedBlankLines(t *testing.T) {
 	input := "## Summary\n## Continuation\n\t## \t\r\n  ##\n## First\n##\n##\n## Second\n##\n##\n## @return 0 OK\nf() { :; }"
 	want := "## Summary\n## Continuation\n\t##\r\n## First\n##\n## Second\n##\n## @return 0 OK\nf() { :; }"
-	for _, source := range []string{input, want} {
-		status, out, diagnostics := invoke(source, "check", "-")
-		if status != 0 || out != "" || diagnostics != "" {
-			t.Fatalf("check = %d, %q, %q", status, out, diagnostics)
-		}
-		status, out, diagnostics = invoke(source, "fmt", "-")
-		if status != 0 || out != want || diagnostics != "" {
-			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
-		}
-		status, out, diagnostics = invoke(source, "generate", "-")
-		const markdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\nContinuation\n\n#### Description\n\nFirst\n\nSecond\n\n#### Return\n\n- `0`: OK\n"
-		if status != 0 || out != markdown || diagnostics != "" {
-			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
-		}
+	formatted, markdown := checkFormatInvariants(t, input, "-")
+	if formatted != want {
+		t.Errorf("fmt = %q; want %q", formatted, want)
+	}
+	const wantMarkdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\nContinuation\n\n#### Description\n\nFirst\n\nSecond\n\n#### Return\n\n- `0`: OK\n"
+	if markdown != wantMarkdown {
+		t.Errorf("generate = %q; want %q", markdown, wantMarkdown)
 	}
 }
 
@@ -571,6 +606,7 @@ func TestDiffRepeatedBlankLineDeletions(t *testing.T) {
 	first := "## Summary\n##\n##\n## Details\nf() { :; }\n"
 	second := "## Summary\n##\n##\n## @return 0 OK\ng() { :; }"
 	input := first + strings.Repeat(":\n", 8) + second
+	checkFormatInvariants(t, input, "-")
 	want := "--- -\n+++ -\n" +
 		"@@ -1,6 +1,5 @@\n ## Summary\n ##\n-##\n ## Details\n f() { :; }\n :\n" +
 		"@@ -13,6 +12,5 @@\n :\n ## Summary\n ##\n-##\n ## @return 0 OK\n g() { :; }\n\\ No newline at end of file\n"
@@ -583,16 +619,13 @@ func TestDiffRepeatedBlankLineDeletions(t *testing.T) {
 func TestFormatBlockEdgeBlankLines(t *testing.T) {
 	input := "\t## \t\r\n##\n## Summary\n##\n## @return 1 Different\n## @return 0 OK\n## \t\r\n  ##\nf() { :; }"
 	want := "## Summary\n##\n## @return 0 OK\n## @return 1 Different\nf() { :; }"
-	for _, source := range []string{input, want} {
-		status, out, diagnostics := invoke(source, "fmt", "-")
-		if status != 0 || out != want || diagnostics != "" {
-			t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, want)
-		}
-		status, out, diagnostics = invoke(source, "generate", "-")
-		const markdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n\n#### Return\n\n- `0`: OK\n- `1`: Different\n"
-		if status != 0 || out != markdown || diagnostics != "" {
-			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, markdown)
-		}
+	formatted, markdown := checkFormatInvariants(t, input, "-")
+	if formatted != want {
+		t.Errorf("fmt = %q; want %q", formatted, want)
+	}
+	const wantMarkdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n\n#### Return\n\n- `0`: OK\n- `1`: Different\n"
+	if markdown != wantMarkdown {
+		t.Errorf("generate = %q; want %q", markdown, wantMarkdown)
 	}
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || diagnostics != "" || !strings.Contains(out, "@@ -1,9 +1,5 @@\n") ||
@@ -616,15 +649,12 @@ func TestFileDocumentation(t *testing.T) {
 	const want = "# `-`\n\nScript summary\n\n## Description\n\nScript description\n\n" +
 		"## Param\n\n- `$1`: File\n\n## Return\n\n- `0`: OK\n\n## Exit\n\n- `1`: Failure\n\n" +
 		"## Functions\n\n### `f`\n\nValidate\n\n### `main`\n\nMain\n\n#### Exit\n\n- `0`: OK\n"
-	status, formatted, diagnostics := invoke(source, "fmt", "-")
-	if status != 0 || formatted == source || diagnostics != "" {
-		t.Fatalf("fmt = %d, %q, %q", status, formatted, diagnostics)
+	formatted, markdown := checkFormatInvariants(t, source, "-")
+	if formatted == source {
+		t.Error("fmt did not change the source")
 	}
-	for _, input := range []string{source, formatted} {
-		status, out, diagnostics := invoke(input, "generate", "-")
-		if status != 0 || out != want || diagnostics != "" {
-			t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
-		}
+	if markdown != want {
+		t.Errorf("generate = %q; want %q", markdown, want)
 	}
 }
 
@@ -637,13 +667,12 @@ func TestFileDocumentationPlacement(t *testing.T) {
 		}
 	}
 	const fileOnly = "##\r\n## Script\r\n##"
-	status, out, diagnostics := invoke(fileOnly, "fmt", "-")
-	if status != 0 || out != "## Script" || diagnostics != "" {
-		t.Fatalf("fmt file only = %d, %q, %q", status, out, diagnostics)
+	formatted, markdown := checkFormatInvariants(t, fileOnly, "-")
+	if formatted != "## Script" {
+		t.Errorf("fmt file only = %q", formatted)
 	}
-	status, out, diagnostics = invoke(fileOnly, "generate", "-")
-	if status != 0 || out != "# `-`\n\nScript\n" || diagnostics != "" {
-		t.Fatalf("generate file only = %d, %q, %q", status, out, diagnostics)
+	if markdown != "# `-`\n\nScript\n" {
+		t.Errorf("generate file only = %q", markdown)
 	}
 }
 
@@ -651,9 +680,11 @@ func TestGenerateSkipsUndocumentedInputs(t *testing.T) {
 	dir := t.TempDir()
 	empty := filepath.Join(dir, "undocumented.sh")
 	documented := filepath.Join(dir, "documented.sh")
-	writeTestFile(t, empty, ":\n")
-	writeTestFile(t, documented, "## File\n:\n")
-	status, out, diagnostics := invoke("## Function\nf() { :; }\n", "generate", empty, documented, "-", empty)
+	writeValidTestFile(t, empty, ":\n")
+	writeValidTestFile(t, documented, "## File\n:\n")
+	const stdin = "## Function\nf() { :; }\n"
+	checkFormatInvariants(t, stdin, "-")
+	status, out, diagnostics := invoke(stdin, "generate", empty, documented, "-", empty)
 	want := "# " + codeSpan(documented) + "\n\nFile\n\n# `-`\n\n## Functions\n\n### `f`\n\nFunction\n"
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
@@ -687,20 +718,12 @@ func TestFormatTagBlankLines(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var markdown string
-			for _, input := range []string{test.input, test.want} {
-				status, out, diagnostics := invoke(input, "fmt", "-")
-				if status != 0 || out != test.want || diagnostics != "" {
-					t.Fatalf("fmt = %d, %q, %q; want %q", status, out, diagnostics, test.want)
-				}
-				status, out, diagnostics = invoke(input, "generate", "-")
-				if status != 0 || diagnostics != "" || out == "" {
-					t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
-				}
-				if markdown != "" && markdown != out {
-					t.Fatalf("generate changed from %q to %q", markdown, out)
-				}
-				markdown = out
+			formatted, markdown := checkFormatInvariants(t, test.input, "-")
+			if formatted != test.want {
+				t.Errorf("fmt = %q; want %q", formatted, test.want)
+			}
+			if markdown == "" {
+				t.Error("generate returned empty Markdown")
 			}
 		})
 	}
@@ -708,6 +731,7 @@ func TestFormatTagBlankLines(t *testing.T) {
 
 func TestDiffTagBlankLineInsertion(t *testing.T) {
 	input := ":\n:\n:\n## Summary\n## @stdin Input\nf() { :; }\n:\n:\n"
+	checkFormatInvariants(t, input, "-")
 	want := "--- -\n+++ -\n@@ -2,6 +2,7 @@\n :\n :\n ## Summary\n+##\n ## @stdin Input\n f() { :; }\n :\n"
 	status, out, diagnostics := invoke(input, "fmt", "-d", "-")
 	if status != 1 || out != want || diagnostics != "" {
