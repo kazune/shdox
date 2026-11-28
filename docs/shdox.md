@@ -86,12 +86,15 @@ text-line   = "##", separator, text, newline;
 tag-line    = "##", separator, tag, newline;
 
 tag         = "@param", separator, position, separator, tag-text
+            | ( "@env" | "@global" ), separator, variable, separator, tag-text
             | "@return", separator, status, separator, tag-text
             | "@exit", separator, status, separator, tag-text
             | ( "@stdin" | "@stdout" | "@stderr" | "@sideeffect" ),
               separator, tag-text;
 
 position    = "$", nonzero, { digit };
+variable    = ( letter | "_" ), { letter | digit | "_" };
+letter      = ? ASCII の英字 ?;
 status      = "0" | nonzero, { digit };
 separator   = hspace, { hspace };
 hspace      = ? ASCII スペースまたは水平タブ ?;
@@ -107,6 +110,8 @@ newline     = ? 行の終端 ?;
 | タグ | 意味 | 出現回数 |
 | --- | --- | --- |
 | `@param <position> <description>` | 位置引数の説明 | 0回以上 |
+| `@env <name> <description>` | 実行環境から受け取る入力変数の説明 | 0回以上 |
+| `@global <name> <description>` | 呼び出し元と同じシェル内で共有する入力変数の説明 | 0回以上 |
 | `@return <status> <description>` | 関数から戻る際の終了ステータスの説明 | 0回以上 |
 | `@exit <status> <description>` | シェルを終了する際の終了ステータスの説明 | 0回以上 |
 | `@stdin <description>` | 標準入力の説明 | 0～1回 |
@@ -121,6 +126,8 @@ newline     = ? 行の終端 ?;
 同一ブロック内では、同じ位置引数の `@param`、同じステータスの `@return`、同じステータスの `@exit` をそれぞれ重複して記述できません。
 `@return 1` と `@exit 1` のように、種類の異なるタグで同じステータスを使うことはできます。
 タグの並び順は任意です。
+
+変数名の検証と `@env`・`@global`・`@sideeffect` の使い分けは [変数タグ](variable-tags.md) を参照してください。
 
 ## CLI
 
@@ -205,7 +212,7 @@ Zsh の構文解析は実験的です。
 
 セクション間と段落間の連続するコメント空行は、先頭行のインデントと改行形式を保持して1行にまとめます。
 
-タグを「生成の出力」の表と同じ順序で並べ、`@param`・`@return`・`@exit` は同種内で数値の昇順に並べます。
+タグの種別と同種タグ内の項目は「生成の出力」と同じ順序で並べます。
 それ以外の同種タグは記述順を保持します。
 
 最初のタグの前にはコメント空行を厳密に1行置きます。
@@ -245,6 +252,8 @@ Zsh の複数名の関数宣言は、宣言内の名前の順に、各名前に�
 | タグ | 見出し | 項目の形式 |
 | --- | --- | --- |
 | `@param` | `Param` | `- `、位置引数のインラインコード、`: `、説明文 |
+| `@env` | `Env` | `- `、変数名のインラインコード、`: `、説明文 |
+| `@global` | `Global` | `- `、変数名のインラインコード、`: `、説明文 |
 | `@stdin` | `Stdin` | 説明文 |
 | `@stdout` | `Stdout` | 説明文 |
 | `@stderr` | `Stderr` | 説明文 |
@@ -253,7 +262,7 @@ Zsh の複数名の関数宣言は、宣言内の名前の順に、各名前に�
 | `@sideeffect` | `Side Effect` | `- `、説明文 |
 
 該当タグがないセクションは省略します。
-同種のタグ内では、`@param`・`@return`・`@exit` を数値の昇順に並べ、それ以外は記述順を保持します。
+同種のタグ内では、`@param`・`@return`・`@exit` を数値の昇順に、`@env`・`@global` を変数名の ASCII 辞書順に並べ、それ以外は記述順を保持します。
 見出しと本文の間、および各セクション間には空行を1行入れます。
 
 概要、詳細、タグの説明文は Markdown としてそのまま出力します。

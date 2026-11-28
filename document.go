@@ -255,6 +255,11 @@ func parseTag(content string) (tag, error) {
 				return t, fmt.Errorf("invalid status for %s: %q", name, t.argument)
 			}
 		}
+	case "@env", "@global":
+		t.argument, t.description = splitField(rest)
+		if !syntax.ValidName(t.argument) {
+			return t, fmt.Errorf("invalid variable name for %s: %q", name, t.argument)
+		}
 	case "@stdin", "@stdout", "@stderr", "@sideeffect":
 	default:
 		return t, fmt.Errorf("unknown tag %q", name)

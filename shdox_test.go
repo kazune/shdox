@@ -188,6 +188,13 @@ func TestDocumentGrammar(t *testing.T) {
 		{"duplicate param", "## Summary\n##\n## @param $1 A\n## @param $1 B", "duplicate tag"},
 		{"duplicate status", "## Summary\n##\n## @return 1 A\n## @return 1 B", "duplicate tag"},
 		{"duplicate stream", "## Summary\n##\n## @stdin A\n## @stdin B", "duplicate tag"},
+		{"missing variable name", "## Summary\n## @env", "invalid variable name"},
+		{"missing variable description", "## Summary\n## @global PATH", "missing description"},
+		{"variable starts with digit", "## Summary\n## @env 1PATH A", "invalid variable name"},
+		{"variable with sigil", "## Summary\n## @global $PATH A", "invalid variable name"},
+		{"non-ASCII variable", "## Summary\n## @env café A", "invalid variable name"},
+		{"duplicate env", "## Summary\n## @env PATH A\n## @env PATH B", "duplicate tag @env PATH"},
+		{"duplicate global", "## Summary\n## @global PATH A\n## @global PATH B", "duplicate tag @global PATH"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -200,6 +207,62 @@ func TestDocumentGrammar(t *testing.T) {
 				t.Fatalf("check = %d, %q, %q; expected %q", status, out, diagnostics, test.issue)
 			}
 		})
+	}
+}
+
+func TestVariableTagOrder(t *testing.T) {
+	const source = `## Script.
+## @global _ Shared.
+## @env _ Environment.
+## @env A0 Setting.
+## @global A0 State.
+
+## Function.
+## @stdin Input.
+## @global a2 State.
+## @global a10 State.
+## @env a2 Setting.
+## @env Z Setting.
+## @param $1 Argument.
+f() { :; }
+
+## Other function.
+g() { :; }
+`
+	const want = `## Script.
+##
+## @env A0 Setting.
+## @env _ Environment.
+## @global A0 State.
+## @global _ Shared.
+
+## Function.
+##
+## @param $1 Argument.
+## @env Z Setting.
+## @env a2 Setting.
+## @global a10 State.
+## @global a2 State.
+## @stdin Input.
+f() { :; }
+
+## Other function.
+g() { :; }
+`
+	formatted, markdown := checkFormatInvariants(t, source, "-")
+	if formatted != want {
+		t.Errorf("formatted variable tags = %q; want %q", formatted, want)
+	}
+	for _, section := range []string{
+		"## Env\n\n- `A0`: Setting.\n- `_`: Environment.\n\n## Global\n\n- `A0`: State.\n- `_`: Shared.",
+		"#### Param\n\n- `$1`: Argument.\n\n#### Env\n\n- `Z`: Setting.\n- `a2`: Setting.\n\n#### Global\n\n- `a10`: State.\n- `a2`: State.\n\n#### Stdin",
+	} {
+		if !strings.Contains(markdown, section) {
+			t.Errorf("missing Markdown section %q in %q", section, markdown)
+		}
+	}
+	if !strings.HasSuffix(markdown, "### `g`\n\nOther function.\n") {
+		t.Errorf("unexpected sections for g in %q", markdown)
 	}
 }
 

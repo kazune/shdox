@@ -77,6 +77,8 @@ func orderedTagSections(tags []tag) []tagSection {
 	}
 	order := [...]struct{ name, heading string }{
 		{"@param", "Param"},
+		{"@env", "Env"},
+		{"@global", "Global"},
 		{"@stdin", "Stdin"},
 		{"@stdout", "Stdout"},
 		{"@stderr", "Stderr"},
@@ -90,7 +92,12 @@ func orderedTagSections(tags []tag) []tagSection {
 		if len(items) == 0 {
 			continue
 		}
-		if items[0].argument != "" {
+		switch section.name {
+		case "@env", "@global":
+			slices.SortFunc(items, func(a, b tag) int {
+				return cmp.Compare(a.argument, b.argument)
+			})
+		case "@param", "@return", "@exit":
 			// Arguments use canonical decimal digits and a common prefix within
 			// each section, so length followed by lexical order is numeric order.
 			slices.SortFunc(items, func(a, b tag) int {

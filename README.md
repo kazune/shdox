@@ -25,7 +25,7 @@ Go 1.26.0 以上を使う場合は、`go install github.com/kazune/shdox@latest`
 ブロックの先頭と末尾にはコメント空行を置けます。
 `fmt` は両端とタグ間のコメント空行を削除し、最初のタグの前と本文の区切りは空行1行に揃えます。
 行頭またはインデントの直後から行末までを占める `##` コメントはすべて検証対象です。
-使用できるタグは `@param`、`@stdin`、`@stdout`、`@stderr`、`@return`、`@exit`、`@sideeffect` です。
+使用できるタグは `@param`、`@env`、`@global`、`@stdin`、`@stdout`、`@stderr`、`@return`、`@exit`、`@sideeffect` です。
 
 以下を `example.sh` として保存します。
 
