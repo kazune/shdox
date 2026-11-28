@@ -7,22 +7,24 @@ binary="$workdir/shdox"
 go build -trimpath -o "$binary" .
 
 export LC_ALL=C
-case "$(go env GOARCH)" in
-	amd64) expected_machine='Advanced Micro Devices X86-64' ;;
-	arm64) expected_machine='AArch64' ;;
-	*) printf 'Unsupported Linux CI architecture\n' >&2; exit 1 ;;
-esac
-machine=$(readelf -hW "$binary" | awk -F ': *' '/Machine:/ {print $2}')
-if [[ "$machine" != "$expected_machine" ]]; then
-	printf 'Unexpected ELF machine: %s (expected %s)\n' "$machine" "$expected_machine" >&2
-	exit 1
-fi
-segments=$(readelf -lW "$binary")
-dynamic=$(readelf -dW "$binary")
-if grep -Eq '^[[:space:]]*INTERP[[:space:]]' <<< "$segments" ||
-   grep -Fq '(NEEDED)' <<< "$dynamic"; then
-	printf 'Linux binary requires a dynamic loader or shared library\n' >&2
-	exit 1
+if [[ $(go env GOOS) == linux ]]; then
+	case "$(go env GOARCH)" in
+		amd64) expected_machine='Advanced Micro Devices X86-64' ;;
+		arm64) expected_machine='AArch64' ;;
+		*) printf 'Unsupported Linux CI architecture\n' >&2; exit 1 ;;
+	esac
+	machine=$(readelf -hW "$binary" | awk -F ': *' '/Machine:/ {print $2}')
+	if [[ "$machine" != "$expected_machine" ]]; then
+		printf 'Unexpected ELF machine: %s (expected %s)\n' "$machine" "$expected_machine" >&2
+		exit 1
+	fi
+	segments=$(readelf -lW "$binary")
+	dynamic=$(readelf -dW "$binary")
+	if grep -Eq '^[[:space:]]*INTERP[[:space:]]' <<< "$segments" ||
+	   grep -Fq '(NEEDED)' <<< "$dynamic"; then
+		printf 'Linux binary requires a dynamic loader or shared library\n' >&2
+		exit 1
+	fi
 fi
 
 cd "$workdir" || exit 1
@@ -63,7 +65,15 @@ test ! -s format.diff
 cat > expected.md <<'MARKDOWN'
 # `script.sh`
 
-## Functions
+## Function Summary
+
+| Function | Summary |
+| --- | --- |
+| [`check_file`](#shdox-function-1) | Check the file. |
+
+## Function Details
+
+<a id="shdox-function-1"></a>
 
 ### `check_file`
 

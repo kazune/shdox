@@ -73,11 +73,11 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Ensure ShellCheck is available
+        run: command -v shellcheck || brew install shellcheck
+
       - name: Test and verify the macOS binary
-        run: |
-          make test
-          make build BINARY="$RUNNER_TEMP/shdox"
-          "$RUNNER_TEMP/shdox" --version
+        run: make ci
 
       - name: Package macOS release archive
         if: startsWith(github.ref, 'refs/tags/v')

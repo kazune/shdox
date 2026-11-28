@@ -4,7 +4,7 @@
 
 Go 1.26.0 以上と GNU Make が必要です。
 `make lint`、`make check`、`make ci` には ShellCheck も必要です。
-`make ci` は Bash と `readelf` を備えた Linux amd64・arm64 環境で実行します。
+`make ci` は Bash を備えた Linux または macOS の amd64・arm64 環境で実行し、Linux では `readelf` も必要です。
 
 ## ビルド
 
@@ -25,9 +25,9 @@ make build
 | `make check` | lint、整形チェック、テストをまとめて実行する。 |
 | `make build` | cgo を無効にしてビルドし、既定では `./shdox` に出力する。 |
 | `make clean` | ビルド成果物を削除する。 |
-| `make ci` | 整形チェック、lint、テスト、ビルド、ELF 検査、CLI の動作確認を実行する。 |
+| `make ci` | 整形チェック、lint、テスト、ビルド、CLI の動作確認を実行し、Linux では ELF も検査する。 |
 
-GitHub Actions は Linux と macOS の amd64・arm64 でテストし、Linux では追加の ELF と CLI の確認も行います。
+GitHub Actions は Linux と macOS の amd64・arm64 で `make ci` を実行します。
 
 ## リリース
 
