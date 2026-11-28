@@ -24,15 +24,19 @@ func writeSource(out io.StringWriter, lines []sourceLine) {
 	}
 }
 
-func writeMarkdown(out io.Writer, name string, fileDoc *document, functions []document) {
+func writeMarkdown(out io.Writer, name string, fileDoc *document, functions []document, firstFunctionID int) {
 	fmt.Fprintf(out, "# %s\n", codeSpan(name))
 	if fileDoc != nil {
 		writeDocument(out, *fileDoc, "##")
 	}
 	if len(functions) != 0 {
-		fmt.Fprintln(out, "\n## Functions")
-		for _, doc := range functions {
-			fmt.Fprintf(out, "\n### %s\n", codeSpan(doc.name))
+		fmt.Fprintln(out, "\n## Function Summary\n\n| Function | Summary |\n| --- | --- |")
+		for i, doc := range functions {
+			fmt.Fprintf(out, "| [%s](#shdox-function-%d) | %s |\n", codeSpan(doc.name), firstFunctionID+i, strings.Join(doc.summary, " "))
+		}
+		fmt.Fprintln(out, "\n## Function Details")
+		for i, doc := range functions {
+			fmt.Fprintf(out, "\n<a id=\"shdox-function-%d\"></a>\n\n### %s\n", firstFunctionID+i, codeSpan(doc.name))
 			writeDocument(out, doc, "####")
 		}
 	}

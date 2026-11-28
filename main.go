@@ -162,6 +162,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	output := bufio.NewWriter(stdout)
 	wroteSection := false
+	nextFunctionID := 1
 	for i, result := range results {
 		name := opts.files[i]
 		switch {
@@ -173,7 +174,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				output.WriteByte('\n')
 			}
 			wroteSection = true
-			writeMarkdown(output, name, result.fileDoc, result.functions)
+			writeMarkdown(output, name, result.fileDoc, result.functions, nextFunctionID)
+			nextFunctionID += len(result.functions)
 		case opts.diff:
 			if writeDiff(output, name, result.lines, result.formatted) {
 				status = 1

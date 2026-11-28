@@ -270,10 +270,10 @@ func TestFormatWholeLineComments(t *testing.T) {
 
 func TestGenerate(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first.sh")
-	writeValidTestFile(t, first, "## *First*\r\nf() { :; }\r\n")
+	writeValidTestFile(t, first, "## *First* `a\\|b`\r\nf() { :; }\r\n")
 	input := "## Second\n## Continuation\n##\n## [Link](./target)\n##\n## @return 255 **Failure**\nf() { :; }"
 	checkFormatInvariants(t, input, "-")
-	want := "# " + codeSpan(first) + "\n\n## Functions\n\n### `f`\n\n*First*\n\n# `-`\n\n## Functions\n\n### `f`\n\nSecond\nContinuation\n\n#### Description\n\n[Link](./target)\n\n#### Return\n\n- `255`: **Failure**\n"
+	want := "# " + codeSpan(first) + "\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | *First* `a\\|b` |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\n*First* `a\\|b`\n\n# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-2) | Second Continuation |\n\n## Function Details\n\n<a id=\"shdox-function-2\"></a>\n\n### `f`\n\nSecond\nContinuation\n\n#### Description\n\n[Link](./target)\n\n#### Return\n\n- `255`: **Failure**\n"
 	status, out, diagnostics := invoke(input, "generate", first, "-")
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q", status, out, diagnostics)
@@ -498,7 +498,7 @@ func TestPreserveBareCarriageReturnOutsideDocumentation(t *testing.T) {
 	if want := strings.Replace(source, "##\tSummary", "## Summary", 1); formatted != want {
 		t.Errorf("fmt = %q; want %q", formatted, want)
 	}
-	if want := "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n"; markdown != want {
+	if want := "# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | Summary |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\nSummary\n"; markdown != want {
 		t.Errorf("generate = %q; want %q", markdown, want)
 	}
 }
@@ -653,7 +653,7 @@ func TestLanguageSelectionAcrossInputs(t *testing.T) {
 
 func TestLanguageSpecificDeclarations(t *testing.T) {
 	source := "## Shared\nfunction alpha beta { :; }\n"
-	want := "# `-`\n\n## Functions\n\n### `alpha`\n\nShared\n\n### `beta`\n\nShared\n"
+	want := "# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`alpha`](#shdox-function-1) | Shared |\n| [`beta`](#shdox-function-2) | Shared |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `alpha`\n\nShared\n\n<a id=\"shdox-function-2\"></a>\n\n### `beta`\n\nShared\n"
 	if _, out := checkFormatInvariants(t, source, "-", "--lang=zsh"); out != want {
 		t.Fatalf("Zsh multi-name generation = %q; want %q", out, want)
 	}
@@ -687,7 +687,7 @@ func TestGenerateTagSections(t *testing.T) {
 ## @return 0 OK
 check_file() { :; }
 `
-	const want = "# `-`\n\n## Functions\n\n### `check_file`\n\nSummary\n\n" +
+	const want = "# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`check_file`](#shdox-function-1) | Summary |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `check_file`\n\nSummary\n\n" +
 		"#### Param\n\n- `$2`: Second\n- `$10`: Tenth\n- `$1000000000000000000000000000000`: Large\n\n" +
 		"#### Stdin\n\nInput\n\n" +
 		"#### Stdout\n\n**Output**\n\n" +
@@ -766,7 +766,7 @@ func TestFormatRepeatedBlankLines(t *testing.T) {
 	if formatted != want {
 		t.Errorf("fmt = %q; want %q", formatted, want)
 	}
-	const wantMarkdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\nContinuation\n\n#### Description\n\nFirst\n\nSecond\n\n#### Return\n\n- `0`: OK\n"
+	const wantMarkdown = "# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | Summary Continuation |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\nSummary\nContinuation\n\n#### Description\n\nFirst\n\nSecond\n\n#### Return\n\n- `0`: OK\n"
 	if markdown != wantMarkdown {
 		t.Errorf("generate = %q; want %q", markdown, wantMarkdown)
 	}
@@ -793,7 +793,7 @@ func TestFormatBlockEdgeBlankLines(t *testing.T) {
 	if formatted != want {
 		t.Errorf("fmt = %q; want %q", formatted, want)
 	}
-	const wantMarkdown = "# `-`\n\n## Functions\n\n### `f`\n\nSummary\n\n#### Return\n\n- `0`: OK\n- `1`: Different\n"
+	const wantMarkdown = "# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | Summary |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\nSummary\n\n#### Return\n\n- `0`: OK\n- `1`: Different\n"
 	if markdown != wantMarkdown {
 		t.Errorf("generate = %q; want %q", markdown, wantMarkdown)
 	}
@@ -818,7 +818,7 @@ func TestFileDocumentation(t *testing.T) {
 		"## Validate\nf() { :; }\n\n## Main\n##\n## @exit 0 OK\nmain() { :; }\n"
 	const want = "# `-`\n\nScript summary\n\n## Description\n\nScript description\n\n" +
 		"## Param\n\n- `$1`: File\n\n## Return\n\n- `0`: OK\n\n## Exit\n\n- `1`: Failure\n\n" +
-		"## Functions\n\n### `f`\n\nValidate\n\n### `main`\n\nMain\n\n#### Exit\n\n- `0`: OK\n"
+		"## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | Validate |\n| [`main`](#shdox-function-2) | Main |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\nValidate\n\n<a id=\"shdox-function-2\"></a>\n\n### `main`\n\nMain\n\n#### Exit\n\n- `0`: OK\n"
 	formatted, markdown := checkFormatInvariants(t, source, "-")
 	if formatted == source {
 		t.Error("fmt did not change the source")
@@ -855,7 +855,7 @@ func TestGenerateSkipsUndocumentedInputs(t *testing.T) {
 	const stdin = "## Function\nf() { :; }\n"
 	checkFormatInvariants(t, stdin, "-")
 	status, out, diagnostics := invoke(stdin, "generate", empty, documented, "-", empty)
-	want := "# " + codeSpan(documented) + "\n\nFile\n\n# `-`\n\n## Functions\n\n### `f`\n\nFunction\n"
+	want := "# " + codeSpan(documented) + "\n\nFile\n\n# `-`\n\n## Function Summary\n\n| Function | Summary |\n| --- | --- |\n| [`f`](#shdox-function-1) | Function |\n\n## Function Details\n\n<a id=\"shdox-function-1\"></a>\n\n### `f`\n\nFunction\n"
 	if status != 0 || out != want || diagnostics != "" {
 		t.Fatalf("generate = %d, %q, %q; want %q", status, out, diagnostics, want)
 	}
