@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -187,6 +188,14 @@ func TestDocumentGrammar(t *testing.T) {
 		{"unknown tag", "## Summary\n##\n## \t@unknown A", "unknown tag"},
 		{"duplicate param", "## Summary\n##\n## @param $1 A\n## @param $1 B", "duplicate tag"},
 		{"duplicate status", "## Summary\n##\n## @return 1 A\n## @return 1 B", "duplicate tag"},
+		{"return other alone", "## Summary\n## @return other A", ""},
+		{"exit other alone", "## Summary\n## @exit other A", ""},
+		{"mixed case other", "## Summary\n## @return Other A", "invalid status"},
+		{"uppercase other", "## Summary\n## @exit OTHER A", "invalid status"},
+		{"other without description", "## Summary\n## @exit other", "missing description"},
+		{"duplicate return other", "## Summary\n## @return other A\n## @return other B", "duplicate tag @return other"},
+		{"duplicate exit other", "## Summary\n## @exit other A\n## @exit other B", "duplicate tag @exit other"},
+		{"param other", "## Summary\n## @param other A", "invalid position"},
 		{"duplicate stream", "## Summary\n##\n## @stdin A\n## @stdin B", "duplicate tag"},
 		{"missing variable name", "## Summary\n## @env", "invalid variable name"},
 		{"missing variable description", "## Summary\n## @global PATH", "missing description"},
@@ -208,6 +217,58 @@ func TestDocumentGrammar(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOtherStatusOrder(t *testing.T) {
+	const source = `## Script.
+## @return other Other returns.
+## @exit other Other exits.
+## @return 255 Highest.
+## @exit 10 Failure.
+## @return 0 Success.
+## @exit 2 Invalid input.
+
+## Function.
+## @return other Function status.
+f() { :; }
+`
+	const want = `## Script.
+##
+## @return 0 Success.
+## @return 255 Highest.
+## @return other Other returns.
+## @exit 2 Invalid input.
+## @exit 10 Failure.
+## @exit other Other exits.
+
+## Function.
+##
+## @return other Function status.
+f() { :; }
+`
+	formatted, markdown := checkFormatInvariants(t, source, "-")
+	if formatted != want {
+		t.Errorf("formatted statuses = %q; want %q", formatted, want)
+	}
+	for _, section := range []string{
+		"## Return\n\n- `0`: Success.\n- `255`: Highest.\n- `other`: Other returns.",
+		"## Exit\n\n- `2`: Invalid input.\n- `10`: Failure.\n- `other`: Other exits.",
+		"#### Return\n\n- `other`: Function status.",
+	} {
+		if !strings.Contains(markdown, section) {
+			t.Errorf("missing Markdown section %q in %q", section, markdown)
+		}
+	}
+}
+
+func TestOtherWithAllNumericStatuses(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("## Function.\n## @return other Remaining statuses.\n")
+	for status := 0; status <= 255; status++ {
+		fmt.Fprintf(&source, "## @return %d Status.\n", status)
+	}
+	source.WriteString("f() { :; }\n")
+	checkFormatInvariants(t, source.String(), "-")
 }
 
 func TestVariableTagOrder(t *testing.T) {

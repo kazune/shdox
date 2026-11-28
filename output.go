@@ -98,8 +98,8 @@ func orderedTagSections(tags []tag) []tagSection {
 				return cmp.Compare(a.argument, b.argument)
 			})
 		case "@param", "@return", "@exit":
-			// Arguments use canonical decimal digits and a common prefix within
-			// each section, so length followed by lexical order is numeric order.
+			// Numeric arguments use canonical decimal digits and a common prefix
+			// within each section. The longer "other" sorts after all statuses.
 			slices.SortFunc(items, func(a, b tag) int {
 				return cmp.Or(cmp.Compare(len(a.argument), len(b.argument)), cmp.Compare(a.argument, b.argument))
 			})

@@ -249,7 +249,7 @@ func parseTag(content string) (tag, error) {
 			if !found || position == "0" || !decimal(position) {
 				return t, fmt.Errorf("invalid position for %s: %q", name, t.argument)
 			}
-		} else {
+		} else if t.argument != "other" {
 			value, err := strconv.Atoi(t.argument)
 			if !decimal(t.argument) || err != nil || value > 255 {
 				return t, fmt.Errorf("invalid status for %s: %q", name, t.argument)
